@@ -1,0 +1,89 @@
+# =========================
+# Environment Variables
+# =========================
+.env
+.env.*
+!.env.example
+
+# =========================
+# Python
+# =========================
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual Environments
+venv/
+.venv/
+env/
+
+# Python build artifacts
+build/
+dist/
+*.egg-info/
+
+# =========================
+# Node / Next.js
+# =========================
+node_modules/
+.next/
+out/
+
+# npm logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# =========================
+# VS Code
+# =========================
+.vscode/
+
+# =========================
+# Claude Code
+# =========================
+.claude/settings.json
+.claude/settings.local.json
+.claude/.env
+
+# =========================
+# OS Files
+# =========================
+.DS_Store
+Thumbs.db
+
+# =========================
+# Runtime / Logs
+# =========================
+logs/
+*.log
+
+settings.json
+
+# =========================
+# Cache Files
+# =========================
+.cache/
+.pytest_cache/
+.mypy_cache/
+
+# =========================
+# Coverage
+# =========================
+.coverage
+htmlcov/
+
+# =========================
+# Temporary Files
+# =========================
+*.tmp
+*.temp
+
+# =========================
+# Documentation / Markdown (Exclude from GitHub)
+# =========================
+BUG_FIXES.md
+CLAUDE.md
+FIXES_SUMMARY.md
+FRONTEND.md
+architecture.md
