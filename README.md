@@ -299,10 +299,6 @@ ws.onerror = (err) => console.error('WebSocket error', err);
 
 ---
 
-## Architecture Overview
-
-For detailed technical documentation, see [`architecture.md`](architecture.md).
-
 ### Key Design Decisions
 
 1. **Separation of Concerns**: Backend (API), engine (logic), frontend (presentation) fully decoupled
@@ -375,8 +371,4 @@ MIT
 
 ---
 
-## Related Documentation
 
-- **[CLAUDE.md](CLAUDE.md)** - Instructions for Claude Code IDE integration
-- **[architecture.md](architecture.md)** - Complete architectural deep-dive with diagrams
-- **[FRONTEND.md](FRONTEND.md)** - Frontend-specific implementation details
