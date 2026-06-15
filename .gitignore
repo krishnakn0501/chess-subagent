@@ -116,3 +116,8 @@ FIXES_SUMMARY.md
 CLAUDE.md
 architecture.md
 FRONTEND.md
+
+.vercel
+.vercelignore
+
+docs/

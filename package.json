@@ -1,0 +1,8 @@
+{
+  "name": "claude-chess-backend",
+  "version": "1.0.0",
+  "description": "Serverless microservice for Stockfish chess evaluation",
+  "dependencies": {
+    "stockfish": "^10.0.2"
+  }
+}

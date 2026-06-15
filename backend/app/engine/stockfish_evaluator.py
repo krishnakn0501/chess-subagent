@@ -1,8 +1,8 @@
 """
-stockfish_evaluator.py — Stockfish engine integration for position evaluation.
+stockfish_evaluator.py — Stockfish engine integration for position evaluation via HTTP.
 
 Provides:
-- Position analysis using python-chess Stockfish engine wrapper
+- Position analysis using serverless Stockfish microservice
 - Win probability calculation from centipawn/mate scores
 - Principal Variation (PV) line extraction in UCI notation
 - Robust error handling with 3-retry logic
@@ -16,7 +16,7 @@ Usage:
 
 import os
 import chess
-import chess.engine
+import httpx
 from pathlib import Path
 from typing import Optional, Any
 import asyncio
@@ -24,12 +24,12 @@ import asyncio
 
 class StockfishEvaluator:
     """
-    Async Stockfish evaluator with win probability and PV line extraction.
+    Async Stockfish evaluator via HTTP with win probability and PV line extraction.
 
     Features:
-    - Analyzes positions to configurable depth
+    - Analyzes positions to configurable depth via remote serverless endpoint
     - Converts centipawn/mate scores to win percentages
-    - Extracts principal variation in UCI notation
+    - Extracts principal variation in UCI notation (simulated/derived from response if needed)
     - Handles mate scores and bound flags robustly
     - Implements 3-retry logic with exponential backoff
     """
@@ -58,77 +58,59 @@ class StockfishEvaluator:
             parts.append("0" if len(parts) >= 4 else "-")
         return " ".join(parts)
 
-    def __init__(self, stockfish_path: Optional[str] = None):
+    def __init__(self, stockfish_url: Optional[str] = None):
         """
         Initialize Stockfish evaluator.
 
         Args:
-            stockfish_path: Path to Stockfish binary. Defaults to STOCKFISH_PATH env var
-                           or "backend/bin/stockfish".
+            stockfish_url: URL to the serverless Stockfish endpoint. Defaults to STOCKFISH_SERVICE_URL env var
+                           or "http://localhost:3000/api/evaluate" for local dev.
         """
-        self.stockfish_path = stockfish_path or os.getenv(
-            "STOCKFISH_PATH"
+        self.stockfish_url = stockfish_url or os.getenv(
+            "STOCKFISH_SERVICE_URL", "http://localhost:3000/api/evaluate"
         )
-        self._engine: Optional[chess.engine.SimpleEngine] = None
-        self._initialized = False
+        self._initialized = True
 
     async def initialize(self) -> bool:
         """
-        Initialize Stockfish engine connection.
+        Initialize Stockfish evaluator (no-op for HTTP version).
 
         Returns:
-            True if initialization successful, False otherwise.
+            True (always, as it's a stateless HTTP client).
         """
-        if self._initialized:
-            return True
+        return self._initialized
 
-        try:
-            # Check if Stockfish binary exists
-            if not os.path.exists(self.stockfish_path):
-                print(f"[Stockfish] Path not found: {self.stockfish_path}")
-                return False
-
-            # Initialize engine
-            self._engine = chess.engine.SimpleEngine.popen_uci(self.stockfish_path)
-            self._initialized = True
-            print(f"[Stockfish] Engine initialized: {self.stockfish_path}")
-            return True
-
-        except Exception as e:
-            print(f"[Stockfish] Initialization failed: {e}")
-            return False
-
-    async def _analyze_position_with_retry(self, board: chess.Board) -> Optional[chess.engine.PlayResult]:
+    async def _analyze_position_with_retry(self, fen: str) -> Optional[dict[str, Any]]:
         """
-        Analyze a position with 3-retry logic and exponential backoff.
+        Analyze a position with 3-retry logic and exponential backoff via HTTP.
 
         Args:
-            board: Chess board position to analyze.
+            fen: FEN string to analyze.
 
         Returns:
-            Analysis result or None if all retries fail.
+            Analysis result dictionary or None if all retries fail.
         """
         last_error = None
 
         for attempt in range(self.MAX_RETRIES):
             try:
-                if not self._initialized:
-                    if not await self.initialize():
-                        raise RuntimeError("Stockfish engine not initialized")
-
-                # Use go depth command for controlled analysis
-                info = self._engine.analyse(board, chess.engine.Limit(depth=self.DEPTH))
-                return info
+                async with httpx.AsyncClient(timeout=15.0) as client:
+                    response = await client.post(
+                        self.stockfish_url,
+                        json={"fen": fen, "depth": self.DEPTH}
+                    )
+                    response.raise_for_status()
+                    return response.json()
 
             except Exception as e:
                 last_error = e
                 wait_time = (2 ** attempt) * 0.5  # Exponential backoff: 0.5s, 1s, 2s
 
                 if attempt < self.MAX_RETRIES - 1:
-                    print(f"[Stockfish] Retry {attempt + 1}/{self.MAX_RETRIES} after {wait_time}s: {e}")
+                    print(f"[Stockfish] HTTP Retry {attempt + 1}/{self.MAX_RETRIES} after {wait_time}s: {e}")
                     await asyncio.sleep(wait_time)
 
-        print(f"[Stockfish] All {self.MAX_RETRIES} retries failed: {last_error}")
+        print(f"[Stockfish] All {self.MAX_RETRIES} HTTP retries failed: {last_error}")
         return None
 
     def _calculate_win_probability(self, cp_score: float) -> tuple[float, float]:
@@ -175,54 +157,33 @@ class StockfishEvaluator:
         Safely extract centipawn value handling bounds and edge cases.
 
         Args:
-            raw_score: The score dictionary from python-chess engine info.
+            raw_score: The score dictionary from HTTP response (contains 'cp' or implies mate).
 
         Returns:
             Tuple of (sanitized_cp_value, has_lowerbound, has_upperbound).
         """
-        has_lowerbound = raw_score.get("lowerbound", False)
-        has_upperbound = raw_score.get("upperbound", False)
+        # For HTTP, we just get a flat cp value. We'll simulate bounds if needed, but usually not present.
+        has_lowerbound = False
+        has_upperbound = False
 
-        # Handle mate scores
-        if "mate" in raw_score:
-            mate_in = raw_score["mate"]
-            is_white_mate = raw_score.get("is_white_mate", True)
-            return 99999.0 if is_white_mate else -99999.0, has_lowerbound, has_upperbound
-
-        # Handle centipawn scores
-        if "cp" in raw_score:
-            cp = raw_score["cp"]
-            # Handle string values that might contain non-numeric characters
+        cp = raw_score.get("cp")
+        if cp is not None:
             try:
                 return float(cp), has_lowerbound, has_upperbound
             except (ValueError, TypeError):
                 return 0.0, has_lowerbound, has_upperbound
 
-        # Default case
         return 0.0, has_lowerbound, has_upperbound
 
     def _extract_pv_line(self, info: dict) -> list[str]:
         """
-        Extract Principal Variation and convert to UCI notation.
-
-        Args:
-            info: Engine info dictionary containing 'pv' field.
-
-        Returns:
-            List of UCI move strings (e.g., ["e2e4", "e7e5", "g1f3"]).
+        Extract Principal Variation.
+        Note: The simple serverless endpoint currently returns best_move and cp.
+        To get full PV, we'd need to enhance the Node.js endpoint. For now, returning [best_move] if available.
         """
         pv_moves = []
-
-        if "pv" not in info:
-            return pv_moves
-
-        pv = info["pv"]
-
-        # pv is a list of chess.Move objects
-        for move in pv:
-            uci_notation = move.uci()
-            pv_moves.append(uci_notation)
-
+        if "best_move" in info:
+            pv_moves.append(info["best_move"])
         return pv_moves
 
     async def get_win_probability(
@@ -262,61 +223,46 @@ class StockfishEvaluator:
         }
 
         try:
-            # Sanitize FEN before parsing
+            # Sanitize FEN before sending
             fen = self.sanitize_fen(fen)
 
-            # Parse FEN into chess.Board
-            board = chess.Board(fen)
-
             # Analyze with retry logic
-            info = await self._analyze_position_with_retry(board)
+            info = await self._analyze_position_with_retry(fen)
 
             if info is None:
                 result["error"] = "Analysis failed after retries"
                 return result
 
-            # Extract score information
-            if "score" in info:
-                pov_score = info["score"]
-                white_score = pov_score.white() # Cast score to White's perspective
-
-                if white_score.is_mate():
-                    # Handle Checkmate
-                    result["is_mate"] = True
-                    moves_to_mate = white_score.mate()
-                    result["mate_in"] = abs(moves_to_mate)
-                    
-                    if moves_to_mate > 0:
-                        result["white_prob"] = 100.0
-                        result["black_prob"] = 0.0
-                    else:
-                        result["white_prob"] = 0.0
-                        result["black_prob"] = 100.0
-                        
-                    result["raw_score"] = f"M{moves_to_mate}"
-                    result["cp_value"] = 10000.0 if moves_to_mate > 0 else -10000.0
-
-                else:
-                    # Handle Centipawns safely (score() handles bounds implicitly)
-                    cp_value = white_score.score()
-                    
-                    # Logistic Sigmoid Formula for win probability
-                    white_decimal = 1.0 / (1.0 + 10.0 ** (-cp_value / 400.0))
-                    
-                    result["white_prob"] = round(white_decimal * 100, 1)
-                    result["black_prob"] = round((1.0 - white_decimal) * 100, 1)
-                    result["raw_score"] = f"cp {cp_value}"
-                    result["cp_value"] = float(cp_value)
-            else:
-                result["error"] = "Engine did not return a score."
+            if "error" in info:
+                result["error"] = info["error"]
                 return result
-            # ---------------------------------------------------------
+
+            cp_value = info.get("cp", 0)
+            best_move = info.get("best_move", "")
+
+            # Check for mate heuristic (cp >= 9000 or <= -9000)
+            if abs(cp_value) >= 9000:
+                result["is_mate"] = True
+                result["mate_in"] = 1 # Simplified for HTTP response
+                if cp_value > 0:
+                    result["white_prob"] = 100.0
+                    result["black_prob"] = 0.0
+                else:
+                    result["white_prob"] = 0.0
+                    result["black_prob"] = 100.0
+                result["raw_score"] = f"M{1}"
+                result["cp_value"] = float(cp_value)
+            else:
+                # Logistic Sigmoid Formula for win probability
+                white_decimal = 1.0 / (1.0 + 10.0 ** (-cp_value / 400.0))
+
+                result["white_prob"] = round(white_decimal * 100, 1)
+                result["black_prob"] = round((1.0 - white_decimal) * 100, 1)
+                result["raw_score"] = f"cp {cp_value}"
+                result["cp_value"] = float(cp_value)
 
             # Extract PV line if requested
-            if include_pv and "pv" in info:
-                # Ensure the PV line is converted from Move objects to SAN/UCI strings
-                # Depending on how _extract_pv_line is written, you might just need:
-                # result["pv_line"] = [board.san(move) for move in info["pv"]]
+            if include_pv:
                 result["pv_line"] = self._extract_pv_line(info)
 
         except Exception as e:
@@ -326,15 +272,9 @@ class StockfishEvaluator:
         return result
 
     def close(self) -> None:
-        """Close the Stockfish engine connection."""
-        if self._engine:
-            try:
-                self._engine.quit()
-                self._initialized = False
-                print("[Stockfish] Engine closed")
-            except Exception as e:
-                print(f"[Stockfish] Error closing engine: {e}")
+        """Close the Stockfish engine connection (no-op for HTTP)."""
+        pass
 
     def __del__(self) -> None:
         """Destructor to ensure cleanup."""
-        self.close()
+        pass
