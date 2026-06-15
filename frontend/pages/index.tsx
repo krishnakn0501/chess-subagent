@@ -108,8 +108,8 @@ const HomePage: React.FC = () => {
   const [pvLine, setPvLine] = useState<string[]>([]);
   const [uiStatus, setUiStatus] = useState<UIStatus>({ state: 'idle', message: 'Ready' });
 
-  // Base URL for the FastAPI Backend
-  const BACKEND_URL = 'http://localhost:8000';
+  // Base URL for the FastAPI Backend (from env var with fallback for local dev)
+  const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
 
   // Initialize game state on load (initial fetch)
   useEffect(() => {
@@ -142,8 +142,8 @@ const HomePage: React.FC = () => {
 
   // WebSocket connection for real-time updates
   useEffect(() => {
-    // Point directly to the FastAPI server port
-    const wsUrl = 'ws://localhost:8000/ws/game';
+    // WebSocket URL from env var with fallback for local dev
+    const wsUrl = process.env.NEXT_PUBLIC_WS_URL || `ws://localhost:8000/ws/game`;
 
     const socket = new WebSocket(wsUrl);
 

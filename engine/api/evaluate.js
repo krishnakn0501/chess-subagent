@@ -1,12 +1,26 @@
 /**
  * api/evaluate.js - Serverless Vercel endpoint for Stockfish evaluation
+ * Deployed as its own Vercel project (Engine microservice).
+ *
  * Accepts POST request with { fen: string, depth: number }
  * Returns { best_move: string, cp: number }
+ *
+ * CORS: Configured to accept cross-origin POST requests from any origin.
  */
 
 const stockfish = require('stockfish');
 
 module.exports = async function handler(req, res) {
+  // ── CORS headers (explicit, every response) ──────────────────────────
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+  // Handle preflight OPTIONS request
+  if (req.method === 'OPTIONS') {
+    return res.status(204).end();
+  }
+
   // Allow only POST requests
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -26,48 +40,49 @@ module.exports = async function handler(req, res) {
     let cp = null;
     let resolved = false;
 
+    // 8 seconds max to respect Vercel limits
     const timeout = setTimeout(() => {
       if (!resolved) {
         resolved = true;
-        engine.terminate();
         res.status(504).json({ error: 'Engine timeout' });
         resolve();
       }
-    }, 8000); // 8 seconds max to respect Vercel limits
+    }, 8000);
 
     engine.onmessage = (line) => {
-      const str = line.toString();
+      if (resolved || typeof line !== 'string') return;
 
-      if (str.startsWith('bestmove')) {
-        const parts = str.split(' ');
-        bestMove = parts[1];
-      }
-
-      if (str.includes('info depth') && str.includes('score cp')) {
-        const match = str.match(/score cp (-?\d+)/);
+      // Extract Evaluation Score (Centipawns)
+      if (line.includes('info depth') && line.includes('score cp')) {
+        const match = line.match(/score cp (-?\d+)/);
         if (match) {
           cp = parseInt(match[1], 10);
         }
       }
 
-      if (str.includes('score mate')) {
-        const mateMatch = str.match(/score mate (-?\d+)/);
+      // Extract Mate Evaluation
+      if (line.includes('score mate')) {
+        const mateMatch = line.match(/score mate (-?\d+)/);
         if (mateMatch) {
           const mateIn = parseInt(mateMatch[1], 10);
-          // Convert mate to centipawn equivalent for consistency
           cp = mateIn > 0 ? 10000 : -10000;
         }
       }
 
-      if (str.startsWith('bestmove') && !resolved) {
+      // Detect Best Move and return response
+      if (line.startsWith('bestmove')) {
+        const parts = line.split(' ');
+        bestMove = parts[1];
+
         clearTimeout(timeout);
         resolved = true;
-        engine.terminate();
+
         res.status(200).json({ best_move: bestMove, cp: cp !== null ? cp : 0 });
         resolve();
       }
     };
 
+    // Initialize and kick off evaluation
     engine.postMessage('uci');
     engine.postMessage(`position fen ${fen}`);
     engine.postMessage(`go depth ${safeDepth}`);

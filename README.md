@@ -78,6 +78,137 @@ A real-time, multi-agent chess simulation where two AI sub-agents (White and Bla
 
 ---
 
+## 2a. Architecture: Three-Way Microservices Deployment (Updated 2026)
+
+This project uses a **three-way microservices deployment architecture**:
+
+```text
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    FRONTEND (Vercel Project A - Next.js)                │
+│  ┌─────────────────┐  ┌──────────────────┐  ┌────────────────────┐    │
+│  │ Chessboard UI   │  │ Move / PGN Log   │  │ Coach Chatbot      │    │
+│  │ (react-chess)   │  │ + Win Prob Bar   │  │ (Floating)         │    │
+│  └────────┬────────┘  └─────────┬────────┘  └──────────┬─────────┘    │
+│           │                     │                      │               │
+│           └─────────────────────┴──────────────────────┘               │
+│                         │                                               │
+│         NEXT_PUBLIC_BACKEND_URL → Railway                               │
+│         NEXT_PUBLIC_WS_URL → Railway (wss://)                           │
+│         NEXT_PUBLIC_ENGINE_URL → Vercel Project B                       │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    │
+        ┌───────────────────────────┼─────────────────────────────────────┐
+        │                           │                                     │
+        ▼                           ▼                                     │
+┌────────────────────┐    ┌──────────────────────────────────────────────┐│
+│ ENGINE (Vercel     │    │              BACKEND (Railway)               ││
+│ Project B)         │    │              (FastAPI Python)                ││
+│ Serverless Node.js │    │                                              ││
+│                    │    │  ┌──────────────────┐  ┌──────────────────┐ ││
+│ api/evaluate.js    │◄───┤│  │ main.py          │  │ orchestrator.py  │ ││
+│ POST {fen, depth}  │    ││  │ - WS Manager     │  │ - Game loop      │ ││
+│ {best_move, cp}    │    ││  │ - CORS / Routes  │  │ - Subprocess mgmt│ ││
+│                    │    ││  │ - /api/coach     │  │ - Async critic   │ ││
+│ CORS: "*"          │    ││  └────────┬─────────┘  └────────┬─────────┘ ││
+│ Max Duration: 10s  │    ││           │                     │           ││
+└────────────────────┘    ││  ┌─────────▼─────────────────────▼───────────┐││
+                          ││  │                        ENGINE MODULES     │││
+                          ││  │  board.py │ validate_move.py             │││
+                          ││  │  apply_move.py │ get_legal_moves.py      │││
+                          ││  │  stockfish_evaluator.py (HTTP client)    │││
+                          ││  │  memory_manager.py (Mem0 ChromaDB)       │││
+                          ││  └───────────────────────────────────────────┘││
+                          │└──────────────────────────────────────────────┘│
+                          └────────────────────────────────────────────────┘
+```
+
+### Why Not All-on-Vercel?
+
+Vercel functions are short-lived (max 10s-900s) and don't support persistent WebSocket connections. The Chess Arena's real-time game loop relies on long-living WebSocket connections between frontend and backend orchestrator, which requires a dedicated server like Railway or EC2.
+
+---
+
+## Monorepo Structure
+
+```
+project-root/
+├── frontend/              # Next.js UI (deploy to Vercel Project A)
+│   ├── pages/
+│   │   ├── index.tsx      # Main chess arena UI with WebSocket consumer
+│   │   └── _app.tsx       # App wrapper
+│   ├── components/        # React components (CoachChatbot, etc.)
+│   ├── styles/            # Tailwind CSS globals
+│   ├── public/            # Static assets
+│   ├── package.json
+│   ├── next.config.js
+│   ├── vercel.json        # Minimal Vercel config (no API routes)
+│   └── .env.local         # NEXT_PUBLIC_BACKEND_URL, NEXT_PUBLIC_ENGINE_URL
+│
+├── engine/                # Stockfish microservice (deploy to Vercel Project B)
+│   ├── api/
+│   │   └── evaluate.js    # Serverless Stockfish endpoint
+│   ├── package.json       # stockfish npm dependency
+│   └── vercel.json        # Vercel function config with CORS headers
+│
+├── backend/               # FastAPI Python backend (deploy to Railway)
+│   ├── app/
+│   │   ├── main.py        # FastAPI entrypoint with WebSocket & REST
+│   │   ├── orchestrator.py# Game loop controller
+│   │   ├── core/          # ConnectionManager, config
+│   │   ├── engine/        # Board logic, move validation, stockfish client
+│   │   └── agents/        # Coach agent, critic scripts references
+│   ├── game_state/        # Runtime JSON state (gitignored)
+│   ├── data/              # Mem0 storage, fallback lessons
+│   ├── requirements.txt
+│   ├── Procfile           # Railway deployment config
+│   └── .env.example       # ENGINE_URL env var template
+│
+├── .claude/               # Agent scripts & rules for sub-agents
+│   ├── scripts/
+│   │   ├── white_player/  # White agent choose_move.py, evaluate.py
+│   │   ├── black_player/  # Black agent (Sicilian focus)
+│   │   └── critic_agent/  # Move quality analyzer
+│   ├── rules/             # Chess domain knowledge per agent
+│   └── settings.json      # API keys, model configs
+│
+├── docs/                  # Architecture documentation
+├── CLAUDE.md              # Project brain / development guide
+├── README.md              # This file
+└── .gitignore             # Updated for 3-way structure
+```
+
+### Environment Variables (Updated 2026)
+
+**Frontend (`frontend/.env.local`):**
+```env
+# Backend API URL (FastAPI on Railway)
+NEXT_PUBLIC_BACKEND_URL=https://your-backend.railway.app
+
+# WebSocket URL (same host as backend)
+NEXT_PUBLIC_WS_URL=wss://your-backend.railway.app
+
+# Stockfish Engine URL (Vercel Project B)
+NEXT_PUBLIC_ENGINE_URL=https://your-engine.vercel.app
+```
+
+**Backend (`backend/.env`):**
+```env
+# Stockfish Engine URL (points to Vercel Project B)
+ENGINE_URL=https://your-engine.vercel.app
+
+# LLM API Keys
+ANTHROPIC_API_KEY=your_key
+CRITIC_AGENT_API_KEY=your_qwen_key
+# ... other API keys
+```
+
+**Engine (`engine/.env`):**
+```env
+# No env vars needed for pure serverless Stockfish function
+```
+
+---
+
 ## 3. Tech Stack & Status
 
 | Layer | Technology | Status | Notes |
@@ -148,31 +279,32 @@ sentiment|POSITIVE|explanation|Stockfish predicts Nf3 revealing strong center co
 
 ---
 
-## 6. Unnecessary Files & Code Cleanup Recommendations
+## 6. Cleanup Status
 
-To maintain a clean, production-ready codebase, the following files/directories should be reviewed and removed or relocated:
+The following files/directories have been **cleaned up** as part of the microservices migration:
 
-### 🗑️ Safe to Delete (Legacy/Redundant)
+### ✅ Completed (Already Removed/Relocated)
+| Path | Action |
+|------|--------|
+| Root `node_modules/` / `package-lock.json` | Deleted — dependencies now isolated per project |
+| `backend/api/evaluate.js` | Moved to `engine/api/evaluate.js` |
+| `Procfile` (root) | Moved to `backend/Procfile` |
+| `frontend/pages/api/proxy/` | Deleted — direct URL routing via env vars |
+| `frontend/vercel.json` (old config) | Simplified — no API routes needed |
+
+### 🗑️ Safe to Delete (Legacy/Redundant - Optional)
 | Path | Reason |
 |------|--------|
-| `backend/backend/` | Empty duplicate directory. Likely a path resolution artifact. |
-| `IMPLEMENTATION_COMPLETE.md` | Redundant with this README and `SUMMARY.md`. |
+| `backend/backend/` | Empty duplicate directory (if exists). |
+| `IMPLEMENTATION_COMPLETE.md` | Redundant with this README. |
 | `SUMMARY.md` | Superseded by this comprehensive README. |
-| `audit-portfolio.mjs` | Orphaned Node.js script, no references in codebase. |
-| `build-frontend.bat` / `build-frontend.sh` | Replaced by standard `npm run build` in `frontend/`. |
-| `start-dev.bat` / `start-dev.sh` | Simple wrappers; developers can run `uvicorn` and `npm run dev` directly. |
+| `audit-portfolio.mjs` | Orphaned Node.js script, no references. |
+| `build-frontend.bat` / `build-frontend.sh` | Replaced by standard `npm run build`. |
+| `start-dev.bat` / `start-dev.sh` | Simple wrappers; use uvicorn/npm directly. |
 
-### 📦 Relocate or Consolidate
-| Path | Recommendation |
-|------|----------------|
-| Root `package.json` / `package-lock.json` / `node_modules/` | Move Playwright dependencies into `frontend/package.json` or a dedicated `e2e-tests/` directory. Root npm packages pollute the workspace. |
-| `frontend/playwright-report/` & `frontend/test-results/` | Add to `.gitignore`. These are generated artifacts, not source code. |
-| `.claude/commands/*.md` | These are legacy skill definitions. Migrate to `.claude/skills/` or remove if unused. |
-
-### 🧹 Code-Level Cleanup Opportunities
-1. **Orchestrator Fallback Logic**: The `_orchestrator_fallback` method is robust but could be extracted into `backend/app/engine/fallback_engine.py` for better separation of concerns.
-2. **Coach Agent Prompt Building**: `backend/app/agents/coach_agent.py` has duplicated prompt-building logic that could be templated into a shared utility.
-3. **TypeScript Types**: The `WebSocketMessage` type in `frontend/pages/index.tsx` could be moved to a shared `frontend/types/websocket.ts` file for reuse across components.
+### 🧹 Code-Level Recommendations
+1. **Orchestrator Fallback Logic**: Could be extracted into `backend/app/engine/fallback_engine.py`.
+2. **TypeScript Types**: Consider moving `WebSocketMessage` type to `frontend/types/websocket.ts`.
 
 ---
 
@@ -270,22 +402,47 @@ curl -X POST http://localhost:8000/api/coach \
 
 ---
 
-## 10. Deployment
+## 10. Deployment (Three-Way Microservices)
 
-| Component | Target | Notes |
-|-----------|--------|-------|
-| Frontend | Vercel | `next build` → static export recommended |
-| Backend | Railway / EC2 | Requires Stockfish binary on host |
-| Stockfish | Pre-installed on server | Set `STOCKFISH_PATH` env var |
-| Mem0 ChromaDB | Local filesystem | `backend/data/mem0_storage/` must persist |
+| Component | Target Project | Build Command | Notes |
+|-----------|---------------|---------------|-------|
+| **Frontend** | Vercel Project A | `next build` | Deploy from `frontend/` directory |
+| **Engine** | Vercel Project B | Node.js serverless | Deploy from `engine/` directory |
+| **Backend** | Railway / EC2 | `uvicorn app.main:app` | Persistent server for WebSocket |
+
+### Vercel Project Configuration
+
+**Project A (Frontend):**
+- Root Directory: `frontend`
+- Build Command: `npm run build`
+- Output Directory: `.next`
+- Environment Variables: `NEXT_PUBLIC_BACKEND_URL`, `NEXT_PUBLIC_ENGINE_URL`
+
+**Project B (Engine):**
+- Root Directory: `engine`
+- Framework Preset: Other (serverless function)
+- No build step needed — pure Node.js API routes
+
+### Railway Deployment (Backend)
+
+```bash
+# Connect your repo to Railway
+railway link
+
+# Deploy backend service (from root, Railway will detect Procfile)
+railway up --path backend
+
+# Set environment variables
+railway variables set ENGINE_URL=https://your-engine.vercel.app
+railway variables set ANTHROPIC_API_KEY=...
+```
 
 ### Production Checklist
-- [ ] All API keys set as environment variables (never in `.env` committed to git)
-- [ ] Stockfish binary downloaded and `STOCKFISH_PATH` configured
-- [ ] CORS origins restricted to production frontend URL
-- [ ] WebSocket URL updated in frontend to match production backend
-- [ ] ChromaDB storage directory has write permissions
-- [ ] Node.js and Python dependencies pinned to specific versions
+- [ ] Frontend env vars configured in Vercel Project A dashboard
+- [ ] Engine deployed to Vercel Project B with correct CORS headers
+- [ ] Backend ENV vars set in Railway dashboard (`ENGINE_URL`, API keys)
+- [ ] CORS origins restricted in production (backend/main.py)
+- [ ] All three projects can reach each other over HTTPS
 
 ---
 
