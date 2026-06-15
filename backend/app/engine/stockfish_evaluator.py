@@ -63,11 +63,11 @@ class StockfishEvaluator:
         Initialize Stockfish evaluator.
 
         Args:
-            stockfish_url: URL to the serverless Stockfish endpoint. Defaults to STOCKFISH_SERVICE_URL env var
-                           or "http://localhost:3000/api/evaluate" for local dev.
+            stockfish_url: URL to the serverless Stockfish endpoint. Defaults to ENGINE_URL env var
+                           or "http://localhost:3002/api/evaluate" for local dev.
         """
         self.stockfish_url = stockfish_url or os.getenv(
-            "STOCKFISH_SERVICE_URL", "http://localhost:3000/api/evaluate"
+            "ENGINE_URL", "http://localhost:3002/api/evaluate"
         )
         self._initialized = True
 
