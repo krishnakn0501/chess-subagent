@@ -93,6 +93,7 @@ async def websocket_game_endpoint(websocket: WebSocket) -> None:
     Clients connect here to receive:
     - initial_state: First broadcast with current board position
     - move_complete: State updates after each agent move
+    - critic_update: Additional critic analysis broadcast separately
     - reset: Game reset notification
     """
     await manager.connect(websocket)
@@ -222,6 +223,44 @@ async def get_api_status() -> StatusResponse:
     )
 
 
+# ── Coach Agent Endpoints ─────────────────────────────────────────────────────
+
+from app.agents.coach_agent import coach_agent
+
+class CoachQuery(BaseModel):
+    """Query model for /api/coach endpoint."""
+    query: str | None = None
+    fen: str | None = None
+
+
+@app.post("/api/coach")
+async def coach_query(query_data: CoachQuery) -> dict[str, Any]:
+    """
+    Handle coach chatbot queries using RAG pipeline.
+
+    Accepts a natural language query and optional current FEN position.
+    Returns a generated answer based on Mem0检索的lessons.
+
+    Args:
+        query_data: Contains 'query' (question) and optional 'fen' (position)
+
+    Returns:
+        Dictionary with 'answer', 'found_context', 'source_count'
+    """
+    try:
+        result = await coach_agent.ask_coach(
+            user_query=query_data.query or "",
+            current_fen=query_data.fen
+        )
+        return result
+    except Exception as e:
+        return {
+            "answer": f"I encountered an error processing your question: {str(e)}. Please try again.",
+            "found_context": False,
+            "source_count": 0
+        }
+
+
 @app.get("/api/health")
 async def health_check() -> dict[str, str]:
     """Simple health check endpoint."""
@@ -232,12 +271,8 @@ async def health_check() -> dict[str, str]:
 
 @app.on_event("startup")
 async def startup_event() -> None:
-    """Initialize game state on server startup."""
-    # Ensure game state exists
-    try:
-        load_game_state()
-    except FileNotFoundError:
-        init_game_state()
+    """Always reset game to starting position on server startup."""
+    init_game_state()
 
 
 @app.on_event("shutdown")

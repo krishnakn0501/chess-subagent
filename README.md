@@ -1,374 +1,298 @@
 # Claude Code Chess Arena
 
-A real-time chess game where two AI sub-agents play against each other, built with a modular FastAPI backend and Next.js frontend with WebSocket streaming.
+A real-time, multi-agent chess simulation where two AI sub-agents (White and Black) play against each other, orchestrated by a FastAPI backend with WebSocket streaming, Stockfish evaluation, Critic analysis, and a RAG-based Coach chatbot.
 
-## Features
-
-- **Two AI Agents**: White plays classical chess, Black plays dynamic Sicilian Defence
-- **Real-time Updates**: WebSocket streaming for instant board updates (replaces legacy 2-second polling)
-- **Automated Gameplay**: Start, pause, stop, reset, and step through moves
-- **Modern UI**: Clean Next.js interface with react-chessboard visualization
-- **Modular Architecture**: Clean separation between backend API, engine logic, and frontend presentation
+> **Document Type**: Post-Implementation Architecture & Requirements Document  
+> **Last Updated**: June 2026  
+> **Version**: 2.0 (Token-Optimized, Async-Decoupled, RAG-Enhanced)
 
 ---
 
-## Project Structure
+## 1. System Overview & Goals
 
-```
-claude-project/
-├── backend/                          # Python FastAPI backend server
-│   ├── app/
-│   │   ├── __init__.py              # Application package marker
-│   │   ├── main.py                  # FastAPI entrypoint with WebSocket & REST endpoints
-│   │   ├── orchestrator.py          # Automated game execution loop controller
-│   │   ├── core/                    # Core utilities and infrastructure
-│   │   │   ├── __init__.py
-│   │   │   ├── config.py            # Path constants and game configuration
-│   │   │   └── connection.py        # WebSocket ConnectionManager
-│   │   └── engine/                  # Chess engine modules
-│   │       ├── __init__.py
-│   │       ├── board.py             # Board representation, FEN parsing, state persistence
-│   │       ├── validate_move.py     # Full chess rule validation
-│   │       ├── apply_move.py        # Move application with broadcast hooks
-│   │       └── get_legal_moves.py   # Legal move generation
-│   └── requirements.txt             # Python dependencies (fastapi, uvicorn, pydantic)
-│
-├── frontend/                         # Next.js TypeScript React frontend
-│   ├── pages/                       # Pages Router components
-│   │   ├── _app.tsx                 # App wrapper with global styles
-│   │   └── index.tsx                # Main UI with WebSocket consumer
-│   ├── styles/                      # Global CSS and Tailwind configuration
-│   │   └── globals.css
-│   ├── next.config.js               # Next.js configuration with API proxy
-│   ├── package.json                 # Node.js dependencies
-│   ├── tsconfig.json                # TypeScript compiler options
-│   ├── postcss.config.js            # PostCSS configuration
-│   └── tailwind.config.js           # Tailwind CSS customization
-│
-├── .claude/scripts/                  # Claude Code agent scripts (sub-agents)
-│   ├── white_player/                # White AI player
-│   │   ├── choose_move.py           # Decision-making entry point
-│   │   └── evaluate.py              # Position evaluation function
-│   └── black_player/                # Black AI player
-│       ├── choose_move.py           # Decision-making entry point
-│       └── evaluate.py              # Position evaluation function
-│
-├── game_state/                       # Persistent game data
-│   ├── current.json                 # Current game position and state
-│   └── last_game.pgn                # PGN export of last completed game
-│
-├── CLAUDE.md                         # Project instructions for Claude Code
-├── architecture.md                   # Detailed technical architecture documentation
-├── FRONTEND.md                       # Frontend-specific documentation
-├── README.md                         # This file - user-facing quickstart guide
-└── *.sh / *.bat                      # Cross-platform development/build scripts
-```
-
-**Root Directory Contents:** Only `backend/`, `frontend/`, `.claude/`, and `game_state/` directories plus global scripts and documentation files. No stray frontend artifacts or legacy engine folders remain at project root level.
+### Core Objectives
+- **Autonomous Gameplay**: Two Claude Code sub-agents make decisions based on position context, LTM (Long-Term Memory), and strategic identity.
+- **Real-Time Observability**: Instant UI updates via WebSocket streaming (no polling).
+- **Self-Improvement Loop**: Critic Agent analyzes moves, extracts lessons, and stores them in Mem0 (ChromaDB) for future reference.
+- **Intelligent Coaching**: RAG-based Coach Agent answers user queries about general chess strategy and current-game predictions.
+- **Low Latency**: Token-based agent outputs eliminate JSON parsing overhead; async critic decoupling prevents UI blocking.
 
 ---
 
-## Quick Start
+## 2. System Architecture
 
-### Prerequisites
+```text
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                            FRONTEND (Next.js)                               │
+│  ┌─────────────────┐  ┌──────────────────┐  ┌────────────────────────────┐ │
+│  │ Chessboard UI   │  │ Move / PGN Log   │  │ Coach Chatbot (Floating)   │ │
+│  │ (react-chess)   │  │ + Win Prob Bar   │  │ + Critic Annotations       │ │
+│  └────────┬────────┘  └─────────┬────────┘  └─────────────┬──────────────┘ │
+│           │                     │                        │                  │
+│           └────────── WebSocket (ws://localhost:8000/ws/game) ────────────┘ │
+│                      REST API (http://localhost:8000/api/...)               │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+┌───────────────────────────────────▼─────────────────────────────────────────┐
+│                         BACKEND (FastAPI / Python)                          │
+│  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────────────┐  │
+│  │ main.py          │  │ orchestrator.py  │  │ coach_agent.py           │  │
+│  │ - WS Manager     │  │ - Game loop      │  │ - Query rewriting        │  │
+│  │ - CORS / Routes  │  │ - Subprocess mgmt│  │ - Mem0 semantic search   │  │
+│  │ - /api/coach     │  │ - Async critic   │  │ - LLM answer synthesis   │  │
+│  └────────┬─────────┘  └────────┬─────────┘  └────────────┬─────────────┘  │
+│           │                     │                         │                 │
+│  ┌────────▼─────────────────────▼─────────────────────────▼─────────────┐  │
+│  │                        ENGINE MODULES                                │  │
+│  │  board.py │ validate_move.py │ apply_move.py │ get_legal_moves.py   │  │
+│  │  stockfish_evaluator.py (centipawn → win prob + PV line)            │  │
+│  │  memory_manager.py (Mem0 ChromaDB + JSON fallback)                  │  │
+│  └──────────────────────────────┬───────────────────────────────────────┘  │
+└─────────────────────────────────┼──────────────────────────────────────────┘
+                                  │
+┌─────────────────────────────────▼──────────────────────────────────────────┐
+│                         AI AGENT SUBPROCESSES (.claude/scripts/)           │
+│  ┌──────────────────────┐  ┌──────────────────────┐  ┌──────────────────┐ │
+│  │ white_player/        │  │ black_player/        │  │ critic_agent/    │ │
+│  │ choose_move.py       │  │ choose_move.py       │  │ choose_move.py   │ │
+│  │ [MOVE] + [REASON]    │  │ [MOVE] + [REASON]    │  │ TOON pipe-format │ │
+│  └──────────┬───────────┘  └──────────┬───────────┘  └────────┬─────────┘ │
+│             │                         │                       │           │
+│             └───────────┬─────────────┴───────────────┬───────┘           │
+│                         ▼                             ▼                   │
+│                 ┌───────────────┐             ┌───────────────┐           │
+│                 │ Anthropic API │             │ Qwen/DashScope│           │
+│                 │ (claude-sonnet│             │ (qwen3.7-max) │           │
+│                 └───────────────┘             └───────────────┘           │
+└────────────────────────────────────────────────────────────────────────────┘
+                                  │
+┌─────────────────────────────────▼──────────────────────────────────────────┐
+│                         PERSISTENCE & EXTERNAL                             │
+│  ┌──────────────────────┐  ┌──────────────────────┐  ┌──────────────────┐ │
+│  │ game_state/          │  │ backend/data/        │  │ backend/bin/     │ │
+│  │ current.json         │  │ mem0_storage/        │  │ stockfish.exe    │ │
+│  │ last_game.pgn        │  │ fallback_lessons.json│  │                  │ │
+│  └──────────────────────┘  └──────────────────────┘  └──────────────────┘ │
+└────────────────────────────────────────────────────────────────────────────┘
+```
 
-- Python 3.11+ with pip
-- Node.js 18+ with npm/yarn
-- Bash shell (Git Bash, WSL, or native on macOS/Linux)
+---
 
-### 1. Install Backend Dependencies
+## 3. Tech Stack & Status
 
+| Layer | Technology | Status | Notes |
+|-------|------------|--------|-------|
+| **Frontend Framework** | Next.js 14 (Pages Router) | ✅ Stable | TypeScript, Tailwind CSS |
+| **UI Components** | react-chessboard, lucide-react | ✅ Stable | Responsive, mobile-first |
+| **Backend Framework** | FastAPI + Uvicorn | ✅ Stable | Async-first, CORS configured |
+| **Chess Engine** | python-chess + Stockfish 16 | ✅ Stable | Depth 15 analysis, PV extraction |
+| **LLM Provider** | Anthropic (Sonnet 4.6) + Qwen (DashScope) | ✅ Stable | Subagents use Sonnet, Critic uses Qwen |
+| **Vector DB / LTM** | Mem0 (ChromaDB) + JSON fallback | ✅ Stable | Semantic search for lessons |
+| **Real-time Comms** | Native WebSocket API | ✅ Stable | Auto-reconnect, ping/pong heartbeats |
+| **Testing** | Playwright | 🟡 Partial | E2E tests exist, needs expansion |
+
+---
+
+## 4. Data Flow & Event Pipeline
+
+### 4.1. The Game Loop (Per Move)
+1. **Orchestrator** loads `game_state/current.json`.
+2. **Agent Subprocess** is spawned with position context + LTM lessons.
+3. **Agent** outputs `[MOVE]\n<move>\n[REASON]\n<one-line reason>` (Token format).
+4. **Orchestrator** applies move via `engine/apply_move.py`.
+5. **Stockfish** evaluates new position → win probabilities + PV line.
+6. **WebSocket** IMMEDIATELY broadcasts `{type: "move_complete", state, win_probabilities, pv_line}`.
+7. **Critic Task** spawns asynchronously (`asyncio.create_task`).
+8. **Game Loop** waits up to 15s max for critic (bounded wait via `asyncio.wait`), then proceeds to next move.
+9. **Critic** (when ready) broadcasts `{type: "critic_update", move, color, critic_commentary}`.
+10. **Memory Manager** stores lesson if sentiment is POSITIVE or NEGATIVE.
+
+### 4.2. Agent Output Formats (Strict Enforcement)
+
+#### Player Agents (White & Black)
+```text
+[MOVE]
+e2e4
+[REASON]
+Controls the center and opens lines for the bishop and queen.
+```
+*Orchestrator parses this via regex/line-matching. No JSON.*
+
+#### Critic Agent
+```text
+sentiment|POSITIVE|explanation|Stockfish predicts Nf3 revealing strong center control|lesson|Always develop knights before pushing flank pawns
+```
+*Single pipe-delimited line. Keys: `sentiment`, `explanation`, `lesson`. No JSON, no brackets, no markdown.*
+
+---
+
+## 5. API & WebSocket Reference
+
+### REST Endpoints
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/health` | Liveness check |
+| `GET` | `/api/status` | Orchestrator state + WS client count |
+| `GET` | `/api/game-state` | Current board state (legacy, prefer WS) |
+| `POST`| `/api/control` | `{command: "start"\|"stop"\|"pause"\|"reset"\|"step"}` |
+| `POST`| `/api/coach` | `{query: "string", fen: "string" (optional)}` |
+
+### WebSocket Messages (`/ws/game`)
+| Type | Direction | Payload |
+|------|-----------|---------|
+| `initial_state` | Server → Client | `{state: GameState}` |
+| `move_complete` | Server → Client | `{state, agent_output, win_probabilities, pv_line}` |
+| `critic_update` | Server → Client | `{critic_commentary, move, color, timestamp}` |
+| `reset` | Server → Client | `{state}` |
+| `ping`/`pong` | Bidirectional | Keep-alive |
+
+---
+
+## 6. Unnecessary Files & Code Cleanup Recommendations
+
+To maintain a clean, production-ready codebase, the following files/directories should be reviewed and removed or relocated:
+
+### 🗑️ Safe to Delete (Legacy/Redundant)
+| Path | Reason |
+|------|--------|
+| `backend/backend/` | Empty duplicate directory. Likely a path resolution artifact. |
+| `IMPLEMENTATION_COMPLETE.md` | Redundant with this README and `SUMMARY.md`. |
+| `SUMMARY.md` | Superseded by this comprehensive README. |
+| `audit-portfolio.mjs` | Orphaned Node.js script, no references in codebase. |
+| `build-frontend.bat` / `build-frontend.sh` | Replaced by standard `npm run build` in `frontend/`. |
+| `start-dev.bat` / `start-dev.sh` | Simple wrappers; developers can run `uvicorn` and `npm run dev` directly. |
+
+### 📦 Relocate or Consolidate
+| Path | Recommendation |
+|------|----------------|
+| Root `package.json` / `package-lock.json` / `node_modules/` | Move Playwright dependencies into `frontend/package.json` or a dedicated `e2e-tests/` directory. Root npm packages pollute the workspace. |
+| `frontend/playwright-report/` & `frontend/test-results/` | Add to `.gitignore`. These are generated artifacts, not source code. |
+| `.claude/commands/*.md` | These are legacy skill definitions. Migrate to `.claude/skills/` or remove if unused. |
+
+### 🧹 Code-Level Cleanup Opportunities
+1. **Orchestrator Fallback Logic**: The `_orchestrator_fallback` method is robust but could be extracted into `backend/app/engine/fallback_engine.py` for better separation of concerns.
+2. **Coach Agent Prompt Building**: `backend/app/agents/coach_agent.py` has duplicated prompt-building logic that could be templated into a shared utility.
+3. **TypeScript Types**: The `WebSocketMessage` type in `frontend/pages/index.tsx` could be moved to a shared `frontend/types/websocket.ts` file for reuse across components.
+
+---
+
+## 7. Troubleshooting
+
+| Symptom | Likely Cause | Solution |
+|---------|--------------|----------|
+| **Frontend shows "Connection error"** | Backend not running or port 8000 blocked | Run `uvicorn app.main:app --reload` in `backend/`. Check firewall. |
+| **Agent outputs "NOT_MY_TURN"** | Orchestrator state desync | Send `POST /api/control` with `{"command": "reset"}`. |
+| **Critic analysis always NEUTRAL** | API key missing or TOON parsing failed | Check `CRITIC_AGENT_API_KEY` in `.env`. Verify orchestrator logs for `[Critic] Parsed TOON format successfully`. |
+| **Coach answers "outside my domain"** | Query lacks chess keywords | Coach is designed to reject non-chess queries. Rephrase with chess terminology. |
+| **Mem0 storage fails silently** | ChromaDB path permissions or missing API keys | Check `MEM0_QWEN_API_KEY` and `EMBEDDINGS_API_KEY` in `.env`. Verify `backend/data/mem0_storage/` is writable. |
+
+---
+
+## 8. Development Workflow
+
+### Local Development
 ```bash
+# Terminal 1: Backend
 cd backend
-pip install -r requirements.txt
-```
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
-Backend requires:
-- `fastapi>=0.109.0` - Web framework
-- `uvicorn[standard]>=0.27.0` - ASGI server
-- `websockets>=12.0` - WebSocket protocol support
-- `pydantic>=2.5.0` - Data validation
-
-### 2. Install Frontend Dependencies
-
-```bash
-cd frontend
-npm install
-```
-
-Frontend requires:
-- `next@14.0.0` - React framework
-- `react-chessboard@^4.6.0` - Chessboard component
-- `chess.js@^1.0.0-beta.8` - Chess rules library
-- `tailwindcss` - Utility-first CSS framework
-
-### 3. Start the Backend Server
-
-From **project root**:
-
-```bash
-cd backend
-
-
-```
-
-Or using the helper script:
-```bash
-./start-dev.sh backend    # macOS/Linux
-.\start-dev.bat backend   # Windows
-```
-
-The backend runs at http://localhost:8000
-
-### 4. Start the Frontend
-
-From **project root**:
-
-```bash
+# Terminal 2: Frontend
 cd frontend
 npm run dev
 ```
 
-Or using the helper script:
-```bash
-./start-dev.sh frontend   # macOS/Linux
-.\start-dev.bat frontend  # Windows
+### Environment Variables (`.env` at project root)
+```env
+# LLM APIs
+ANTHROPIC_API_KEY=your_key_here
+ANTHROPIC_BASE_URL=https://api.anthropic.com
+ANTHROPIC_MODEL=claude-sonnet-4-6
+
+# Critic Agent (Qwen via DashScope)
+CRITIC_AGENT_API_KEY=your_qwen_key
+CRITIC_API_URL=https://dashscope-intl.aliyuncs.com/compatible-mode/v1
+CRITIC_MODEL=qwen3.7-max
+
+# Mem0 / Embeddings
+MEM0_QWEN_API_KEY=your_qwen_key
+MEM0_QWEN_API_URL=https://dashscope-intl.aliyuncs.com/compatible-mode
+MEM0_QWEN_MODEL_NAME=qwen-plus
+EMBEDDINGS_API_KEY=your_embeddings_key
+EMBEDDINGS_BASE_URL=https://dashscope-intl.aliyuncs.com/compatible-mode
+EMBEDDINGS_MODEL_NAME=text-embedding-v1
+
+# Stockfish
+STOCKFISH_PATH=backend/bin/stockfish
 ```
 
-The frontend runs at http://localhost:3000 with automatic API proxy to backend.
-
-### 5. Access the Application
-
-Open your browser to **http://localhost:3000**
-
-You should see:
-- A clean chessboard in starting position
-- Turn indicator showing "White to move"
-- Agent profiles for both players
-- Controls: Start Simulation, Pause, Reset Simulation, Reset Board
-- Move log and PGN history sections
+> **Note**: Never hardcode secrets in source files. All keys load via `python-dotenv` or Next.js environment config.
 
 ---
 
-## How It Works
+## 9. Verification & Testing
 
-### Real-Time Event Pipeline
-
-Unlike traditional REST polling, this system uses **WebSocket streaming** for instantaneous updates:
-
-1. **Connection Phase**: Browser opens WebSocket to `/ws/game` on page load
-2. **Initial State**: Server immediately sends full game state (`type: initial_state`)
-3. **Game Loop**: When automated mode starts, orchestrator runs continuously:
-   ```
-   Load state → Choose agent (white/black) → Execute subprocess → Parse output
-   → Broadcast {type: move_complete, state, agent_output} → Sleep(1s)
-   ```
-4. **UI Updates**: Frontend receives messages and updates React state instantly
-5. **User Control**: Buttons call `/api/control` which triggers corresponding orchestrator methods
-
-### Agent Subprocess Execution
-
-Agent scripts run as isolated processes via the orchestrator:
-
-```python
-# From backend/app/orchestrator.py
-process = await asyncio.create_subprocess_exec(
-    sys.executable,
-    str(agent_script),              # .claude/scripts/{color}_player/choose_move.py
-    stdout=asyncio.subprocess.PIPE,
-    stderr=asyncio.subprocess.PIPE,
-    env={**os.environ, "PYTHONPATH": f"{engine_path}:{new_engine_path}"}
-)
-```
-
-**Key Points:**
-- PYTHONPATH includes `.claude/scripts/` and `backend/app/engine/` for correct module resolution
-- Timeout: 60 seconds per move
-- Output format: `WHITE_MOVE: e2e4` + `REASON: <explanation>`
-
-### Shared Game State
-
-All components read/write exclusively through `game_state/current.json`:
-
-| Component | Reads | Writes |
-|-----------|-------|--------|
-| Agent Scripts | ✅ Current position | ✅ Move results |
-| Backend Engine | ✅ Board state | ✅ Updated board |
-| Orchestrator | ✅ Status/clocks | ✅ New moves |
-| Frontend (WebSocket) | ✅ Initial state | ❌ Passive only |
-
----
-
-## API Reference
-
-### REST Endpoints
-
-#### Health Check
+### Manual End-to-End Verification
 
 ```bash
+# 1. Backend health
 curl http://localhost:8000/api/health
-# Response: {"status":"ok","message":"Chess Arena API is running"}
-```
+# Expected: {"status":"ok","message":"Chess Arena API is running"}
 
-#### Server Status
+# 2. Start a game and watch WebSocket messages
+# Open browser to http://localhost:3000, click "Start Simulation"
 
-```bash
-curl http://localhost:8000/api/status
-# Response: {"status":"healthy","websocket_clients":N,"game_running":bool,"game_paused":bool}
-```
-
-#### Get Current Game State (Legacy)
-
-```bash
-curl http://localhost:8000/api/game-state
-```
-
-#### Control Commands
-
-**Start Automated Game:**
-```bash
-curl -X POST http://localhost:8000/api/control \
+# 3. Test Coach Agent
+curl -X POST http://localhost:8000/api/coach \
   -H "Content-Type: application/json" \
-  -d '{"command": "start"}'
-```
+  -d '{"query": "What is a fork in chess?"}'
+# Expected: General chess explanation about fork tactic
 
-**Pause/Resume:**
-```bash
-curl -X POST http://localhost:8000/api/control \
+# 4. Test Coach Prediction
+curl -X POST http://localhost:8000/api/coach \
   -H "Content-Type: application/json" \
-  -d '{"command": "pause"}'
-```
+  -d '{"query": "Who will win?", "fen": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1"}'
+# Expected: Position analysis with prediction reasoning
 
-**Reset Game:**
-```bash
-curl -X POST http://localhost:8000/api/control \
+# 5. Test Coach out-of-domain rejection
+curl -X POST http://localhost:8000/api/coach \
   -H "Content-Type: application/json" \
-  -d '{"command": "reset"}'
+  -d '{"query": "Tell me about Python programming"}'
+# Expected: "This is outside my domain" response
+
+# 6. Verify critic TOON format in logs
+# Start a game and check backend logs for:
+#   "[Critic] Parsed TOON format successfully"
 ```
 
-**Step Single Move:**
-```bash
-curl -X POST http://localhost:8000/api/control \
-  -H "Content-Type: application/json" \
-  -d '{"command": "step"}'
-```
-
-### WebSocket Protocol (`/ws/game`)
-
-**Message Types:**
-
-```typescript
-// Client → Server (heartbeats)
-{ "type": "ping" }
-
-// Server → Client (initial connection)
-{ "type": "initial_state", "state": GameState }
-
-// Server → Client (after each move)
-{ 
-  "type": "move_complete",
-  "state": GameState,
-  "agent_output": {
-    "success": true,
-    "output": "WHITE_MOVE: e2e4\r\nREASON: Open the center...",
-    "error": ""
-  }
-}
-
-// Server → Client (on reset)
-{ "type": "reset", "state": GameState }
-```
-
-**Connecting from Browser:**
-
-```javascript
-const ws = new WebSocket('ws://localhost:8000/ws/game');
-
-ws.onopen = () => console.log('Connected');
-ws.onmessage = (event) => {
-  const msg = JSON.parse(event.data);
-  
-  if (msg.type === 'move_complete') {
-    setGameState(msg.state);
-    console.log('Move executed:', msg.agent_output.output);
-  }
-};
-
-ws.onerror = (err) => console.error('WebSocket error', err);
-```
+### Automated Tests
+- **Frontend E2E**: Playwright tests in `frontend/tests/`
+- **Backend**: pytest integration (to be expanded)
 
 ---
 
-### Key Design Decisions
+## 10. Deployment
 
-1. **Separation of Concerns**: Backend (API), engine (logic), frontend (presentation) fully decoupled
-2. **Subprocess Isolation**: Agents execute outside Python process boundary, preventing crashes
-3. **State File Persistence**: `current.json` serves as single source of truth
-4. **Consolidated Architecture**: All engine logic unified in `backend/app/engine/`; legacy folders removed
-5. **No Root Pollution**: All frontend configs moved to `frontend/`; root contains only essential directories
+| Component | Target | Notes |
+|-----------|--------|-------|
+| Frontend | Vercel | `next build` → static export recommended |
+| Backend | Railway / EC2 | Requires Stockfish binary on host |
+| Stockfish | Pre-installed on server | Set `STOCKFISH_PATH` env var |
+| Mem0 ChromaDB | Local filesystem | `backend/data/mem0_storage/` must persist |
 
----
-
-## Troubleshooting
-
-### Frontend Won't Load
-
-1. Ensure backend is running: `curl http://localhost:8000/api/health`
-2. Check browser DevTools Network tab for WebSocket connection status
-3. Verify `frontend/next.config.js` has correct proxy rewrites
-
-### WebSocket Not Connecting
-
-1. Backend must be accessible at `http://localhost:8000`
-2. CORS settings allow origins: check `backend/app/main.py` CORS middleware
-3. Firewall not blocking port 8000
-
-### Agent Moves Not Appearing
-
-1. Check backend logs for subprocess errors
-2. Verify `.claude/scripts/white_player/choose_move.py` executes standalone:
-   ```bash
-   python .claude/scripts/white_player/choose_move.py
-   ```
-3. Confirm PYTHONPATH includes `backend/app/engine/` directory
-
-### Duplicate Move Logs
-
-The frontend now properly handles `agent_output` as an object `{success, output, error}` rather than raw string, eliminating duplicate logging issues.
+### Production Checklist
+- [ ] All API keys set as environment variables (never in `.env` committed to git)
+- [ ] Stockfish binary downloaded and `STOCKFISH_PATH` configured
+- [ ] CORS origins restricted to production frontend URL
+- [ ] WebSocket URL updated in frontend to match production backend
+- [ ] ChromaDB storage directory has write permissions
+- [ ] Node.js and Python dependencies pinned to specific versions
 
 ---
 
-## Development Workflow
-
-### Recommended Approach
-
-1. Keep terminal open for backend: `uvicorn app.main:app --reload`
-2. Open second terminal for frontend: `npm run dev`
-3. Use hot reload during development (changes auto-restart servers)
-
-### Building for Production
-
-**Backend:**
-```bash
-# Package as wheel or deploy directly
-cd backend && pip install wheel && python setup.py bdist_wheel
-```
-
-**Frontend:**
-```bash
-cd frontend
-npm run build
-npm start  # Serves static build
-```
-
-Note: For production deployment, consider building static exports instead of Next.js server mode.
-
----
-
-## License
+## 11. License
 
 MIT
 
 ---
 
-
+*This document serves as the authoritative post-implementation reference for the Claude Code Chess Arena. For development instructions, see [CLAUDE.md](./CLAUDE.md).*

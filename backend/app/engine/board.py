@@ -78,6 +78,98 @@ def board_to_fen_position(board: list[list[str]]) -> str:
     return "/".join(ranks)
 
 
+def uci_to_san(uci_move: str, board: list[list[str]], color: str) -> str:
+    """
+    Convert a UCI move (e.g. 'e2e4') to Standard Algebraic Notation (e.g. 'e4').
+
+    Args:
+        uci_move: Move in UCI format (e.g. 'e2e4', 'e7e8Q')
+        board: Current 8x8 board state
+        color: 'white' or 'black'
+
+    Returns:
+        SAN string (e.g. 'e4', 'Nf3', 'O-O', 'exd5', 'e8=Q')
+    """
+    if len(uci_move) < 4:
+        return uci_move
+
+    from_sq = uci_move[:2]
+    to_sq = uci_move[2:4]
+    promotion = uci_move[4].upper() if len(uci_move) == 5 else None
+
+    fr, fc = algebraic_to_index(from_sq)
+    tr, tc = algebraic_to_index(to_sq)
+    piece = board[fr][fc]
+    captured = board[tr][tc] != "."
+
+    # Handle en passant capture detection
+    is_pawn = piece.upper() == "P"
+    if is_pawn and fc != tc and board[tr][tc] == ".":
+        captured = True  # en passant
+
+    # Castling
+    if piece.upper() == "K" and abs(tc - fc) == 2:
+        return "O-O" if tc > fc else "O-O-O"
+
+    san = ""
+
+    # Pawn moves
+    if is_pawn:
+        if captured:
+            san = from_sq[0] + "x" + to_sq  # e.g. "exd5"
+        else:
+            san = to_sq  # e.g. "e4"
+        if promotion:
+            san += "=" + promotion
+        return san
+
+    # Piece moves (N, B, R, Q, K)
+    piece_letter = piece.upper()
+    san = piece_letter
+
+    # Check for disambiguation (same piece type can reach same square)
+    # Find all pieces of same type and color that can move to to_sq
+    same_piece_moves = []
+    for r in range(8):
+        for c in range(8):
+            if (r, c) == (fr, fc):
+                continue
+            if board[r][c].upper() == piece.upper():
+                # Check if same color
+                is_same_color = (board[r][c].isupper() == piece.isupper())
+                if not is_same_color:
+                    continue
+                # Check if this piece can reach to_sq (simplified check)
+                # For basic disambiguation, just note same-type pieces exist
+                same_piece_moves.append((r, c))
+
+    # Simple disambiguation: if another same-type piece exists, add file or rank
+    if same_piece_moves:
+        # Check if any other same piece can reach the target square
+        needs_file = False
+        needs_rank = False
+        for (r2, c2) in same_piece_moves:
+            # Simple: if on same file, need rank; if on same rank, need file
+            if c2 == fc:
+                needs_rank = True
+            if r2 == fr:
+                needs_file = True
+
+        if needs_file or needs_rank:
+            if needs_file and not needs_rank:
+                san += from_sq[0]  # file disambiguation
+            elif needs_rank:
+                san += from_sq[1]  # rank disambiguation
+            else:
+                san += from_sq  # full disambiguation
+
+    if captured:
+        san += "x"
+    san += to_sq
+
+    return san
+
+
 def algebraic_to_index(square: str) -> tuple[int, int]:
     """Convert 'e4' -> (row, col). e.g. a8=(0,0), h1=(7,7)."""
     col = ord(square[0]) - ord("a")
@@ -109,7 +201,7 @@ def save_game_state(state: dict[str, Any]) -> None:
 
 
 def export_to_pgn(state: dict[str, Any]) -> None:
-    """Export game state to PGN format."""
+    """Export game state to PGN format with Pakistan/India player names."""
     move_history = state.get("move_history", [])
     status = state.get("status", "active")
 
@@ -122,27 +214,59 @@ def export_to_pgn(state: dict[str, Any]) -> None:
     else:
         result = "*"
 
-    # Build PGN
+    # Build PGN headers with Pakistan/India
     lines = [
-        '[Event "Claude Code Subagent Chess"]',
-        '[White "white-player (Claude AI)"]',
-        '[Black "black-player (Claude AI)"]',
+        '[Event "Claude Code Chess Arena — Pakistan vs India"]',
+        '[White "Pakistan"]',
+        '[Black "India"]',
         f'[Result "{result}"]',
         "",
     ]
 
-    # Format moves
+    # Reconstruct board state incrementally for SAN conversion
+    board = fen_to_board(STARTING_FEN)
+
+    # Format moves with player names
     move_text = ""
-    for i, move in enumerate(move_history):
+    for i, move_entry in enumerate(move_history):
+        uci_move = move_entry["move"]
+        color = move_entry["color"]
+
+        # Convert UCI to SAN
+        san = uci_to_san(uci_move, board, color)
+
+        # Apply the move to our tracking board
+        if len(uci_move) >= 4:
+            fr, fc = algebraic_to_index(uci_move[:2])
+            tr, tc = algebraic_to_index(uci_move[2:4])
+            piece = board[fr][fc]
+            board[tr][tc] = piece
+            board[fr][fc] = "."
+
+            # Handle castling rook movement
+            if piece.upper() == "K" and abs(tc - fc) == 2:
+                if tc > fc:  # kingside
+                    board[fr][5] = board[fr][7]
+                    board[fr][7] = "."
+                else:  # queenside
+                    board[fr][3] = board[fr][0]
+                    board[fr][0] = "."
+
+            # Handle promotion
+            if piece.upper() == "P" and len(uci_move) == 5:
+                promo_piece = uci_move[4].upper()
+                board[tr][tc] = promo_piece if color == "white" else promo_piece.lower()
+
+        # Format: move_number. move_string player_name
         if i % 2 == 0:  # White's move
             move_num = (i // 2) + 1
-            move_text += f"{move_num}. {move['move']} "
+            move_text += f"{move_num}. {san} Pakistan  "
         else:  # Black's move
-            move_text += f"{move['move']} "
+            move_text += f"{san} India  "
 
     move_text += result
 
-    lines.append(move_text)
+    lines.append(move_text.strip())
 
     # Write to file
     PGN_PATH.parent.mkdir(parents=True, exist_ok=True)

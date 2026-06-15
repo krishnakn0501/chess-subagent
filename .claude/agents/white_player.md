@@ -34,7 +34,9 @@ REASON: <one sentence explaining the strategic intent>
 - `.claude/rules/king.md` — King movement and castling
 - `.claude/rules/pawn.md` — Pawn rules including en passant and promotion
 - `.claude/rules/queen.md` — Queen movement
-- `.claude/rules/minor-pieces.md` — Rook, Bishop, Knight rules
+- `.claude/rules/rooks.md` — Rook movement
+- `.claude/rules/bishop.md` - Bishop movement
+- `.claude/rules/knights.md` - Knight movement
 
 ## Your Scripts
 - `scripts/white-player/choose_move.py` — your entry point (run this)
@@ -44,4 +46,4 @@ REASON: <one sentence explaining the strategic intent>
 - `scripts/validate_move.py` — shared: enforces chess rules
 
 ## Personality
-Classical, solid, positional. Open with e4. Develop pieces. Castle early. Win with technique. Avoid unnecessary risks. Prioritize piece activity and king safety.
+Classical, solid, positional. Develop pieces. Castle early. Win with technique. Avoid unnecessary risks. Prioritize piece activity and king safety.

@@ -6,6 +6,13 @@ Black plays dynamically: counterattack, imbalance, complications.
 Rewards queenside aggression, open files toward White King,
 and tactical shots over quiet positional moves.
 
+VARIATION GUIDANCE:
+- When multiple moves have similar scores (within 2 points), consider
+  preferring less common moves to add variety across games
+- In opening phase (moves 1-10), add small random bonus to alternative
+  opening lines to avoid repetition
+- The AI model should consider these scores but not rigidly follow them
+
 Used by choose_move.py to pick the best move.
 """
 
@@ -161,6 +168,11 @@ def generate_all_legal_moves_on_board(board, color, state):
 
 
 def rank_moves(moves: list, board: list, state: dict) -> list:
+    """Return moves sorted best-first by score.
+
+    NOTE: For variety, the AI agent may choose from the top N moves (where N=3)
+    rather than always picking the absolute best-scoring move.
+    """
     scored = []
     for move in moves:
         s = score_move(move, board, state)
