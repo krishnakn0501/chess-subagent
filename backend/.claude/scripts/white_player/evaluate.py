@@ -19,12 +19,12 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from board import load_game_state, algebraic_to_index, index_to_algebraic
-from validate_move import (
+from app.engine.board import load_game_state, algebraic_to_index, index_to_algebraic
+from app.engine.validate_move import (
     simulate_move, in_check, is_square_attacked,
     get_piece_moves, find_king
 )
-from get_legal_moves import generate_all_legal_moves
+from app.engine.get_legal_moves import generate_all_legal_moves
 
 # ── Constants ────────────────────────────────────────────────────────────────
 

@@ -33,9 +33,9 @@ import time
 sys.path.insert(0, str(Path(__file__).parent.parent))
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "backend" / "app"))
 
-from engine.board import load_game_state, render_board
-from engine.get_legal_moves import generate_all_legal_moves
-from engine.apply_move import apply_move
+from app.engine.board import load_game_state, render_board
+from app.engine.get_legal_moves import generate_all_legal_moves
+from app.engine.apply_move import apply_move
 
 API_URL = os.environ.get("ANTHROPIC_BASE_URL") + "/v1/messages"
 MODEL   = os.environ.get("ANTHROPIC_MODEL", "sonnet")
@@ -231,7 +231,7 @@ def retrieve_lessons(color: str, fen: str) -> str:
 
     def _fetch():
         try:
-            from engine.memory_manager import retrieve_relevant_lessons
+            from app.engine.memory_manager import retrieve_relevant_lessons
             lessons = retrieve_relevant_lessons(color, fen)
             result["lessons"] = lessons
         except Exception as e:
@@ -318,8 +318,8 @@ def deterministic_fallback(legal_moves: list, board: list) -> tuple[str, str]:
     If the API call fails, pick the best move using simple heuristics.
     Priority: checkmate > capture > check > center > any legal move.
     """
-    from engine.validate_move import simulate_move, in_check
-    from engine.board import save_game_state, load_game_state
+    from app.engine.validate_move import simulate_move, in_check
+    from app.engine.board import save_game_state, load_game_state
     import copy
 
     piece_vals = {"Q": 9, "R": 5, "B": 3, "N": 3, "P": 1,
