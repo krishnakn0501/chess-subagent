@@ -18,6 +18,7 @@ import os
 import chess
 from pathlib import Path
 from typing import Optional, Any
+import shutil
 from stockfish import Stockfish
 
 
@@ -61,12 +62,36 @@ class StockfishEvaluator:
         Initialize Stockfish evaluator with local binary.
 
         Args:
-            stockfish_path: Path to the Stockfish binary. Defaults to STOCKFISH_BINARY_PATH env var
-                           or "stockfish" for system-installed binary (available via Nixpacks on Railway).
+            stockfish_path: Path to the Stockfish binary. Defaults to STOCKFISH_BINARY_PATH env var,
+                            or dynamically searches for the system-installed binary.
         """
-        binary_path = stockfish_path or os.getenv("STOCKFISH_BINARY_PATH", "stockfish")
-        self.engine = Stockfish(path=binary_path, depth=self.DEPTH)
-        self._initialized = True
+        # 1. Check for an explicit environment variable first
+        env_path = os.getenv("STOCKFISH_BINARY_PATH")
+        
+        # 2. Actively hunt down the absolute path of the binary in the Linux container
+        system_path = (
+            shutil.which("stockfish") or 
+            shutil.which("/usr/games/stockfish") or 
+            shutil.which("/usr/bin/stockfish")
+        )
+        
+        # 3. Determine the final path to use
+        binary_path = stockfish_path or env_path or system_path
+        
+        if not binary_path:
+            print("[Orchestrator] ❌ FATAL: Could not locate 'stockfish' binary in system paths.")
+            self.engine = None
+            self._initialized = False
+            return
+
+        try:
+            self.engine = Stockfish(path=binary_path, depth=self.DEPTH)
+            self._initialized = True
+            print(f"[Orchestrator] Stockfish initialized successfully at {binary_path}! ✓")
+        except Exception as e:
+            print(f"[Orchestrator] ❌ FATAL: Failed to initialize Stockfish: {e}")
+            self.engine = None
+            self._initialized = False
 
     def initialize(self) -> bool:
         """
