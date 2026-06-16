@@ -81,7 +81,7 @@ class GameOrchestrator:
             # Initialize Stockfish
             if self._stockfish_evaluator is None:
                 self._stockfish_evaluator = StockfishEvaluator()
-                stockfish_ok = await self._stockfish_evaluator.initialize()
+                stockfish_ok = self._stockfish_evaluator.initialize()
                 print(f"[Orchestrator] Stockfish initialized: {'✓' if stockfish_ok else '✗'}")
 
             # Initialize Memory Client
@@ -234,7 +234,7 @@ class GameOrchestrator:
         fen_before = self._board_to_fen(state_before)
 
         # Evaluate before move
-        win_probs_before = await self._evaluate_with_retry(fen_before)
+        win_probs_before = self._evaluate_with_retry(fen_before)
 
         # Step 2: Execute agent script
         print(f"\n[ORCHESTRATOR] Executing {color.upper()} agent with LTM...")
@@ -263,7 +263,7 @@ class GameOrchestrator:
         fen_after = self._board_to_fen(state_after)
 
         # Evaluate after move
-        win_probs_after = await self._evaluate_with_retry(fen_after)
+        win_probs_after = self._evaluate_with_retry(fen_after)
 
         # Step 4: Extract move from agent output
         move_str = self._extract_move_from_output(agent_result.get("output", ""))
@@ -393,9 +393,9 @@ class GameOrchestrator:
             "error": f"Agent execution failed after {MAX_RETRIES} retries"
         }
 
-    async def _evaluate_with_retry(self, fen: str) -> dict[str, Any]:
+    def _evaluate_with_retry(self, fen: str) -> dict[str, Any]:
         """
-        Evaluate position with Stockfish with 3-retry logic.
+        Evaluate position with Stockfish with retry logic.
 
         Args:
             fen: FEN string to analyze.
@@ -419,7 +419,7 @@ class GameOrchestrator:
 
         for attempt in range(MAX_RETRIES):
             try:
-                result = await self._stockfish_evaluator.get_win_probability(fen)
+                result = self._stockfish_evaluator.get_win_probability(fen)
 
                 if result.get("error") is None:
                     return result
@@ -427,13 +427,15 @@ class GameOrchestrator:
                 print(f"[Orchestrator] Analysis failed. Retry {attempt + 1}/{MAX_RETRIES}")
                 if attempt < MAX_RETRIES - 1:
                     wait_time = self.RETRY_DELAY_BASE * (2 ** attempt)
-                    await asyncio.sleep(wait_time)
+                    import time
+                    time.sleep(wait_time)
 
             except Exception as e:
                 print(f"[Orchestrator] Evaluation error: {e}. Retry {attempt + 1}/{MAX_RETRIES}")
                 if attempt < MAX_RETRIES - 1:
                     wait_time = self.RETRY_DELAY_BASE * (2 ** attempt)
-                    await asyncio.sleep(wait_time)
+                    import time
+                    time.sleep(wait_time)
 
         return {
             "white_prob": 50.0,
@@ -471,7 +473,7 @@ class GameOrchestrator:
         Returns:
             Critic analysis result dictionary.
         """
-        critic_script = self.project_root / "backend" / ".claude" / "scripts" / "critic_agent" / "choose_move.py"
+        critic_script = self.project_root / ".claude" / "scripts" / "critic_agent" / "choose_move.py"
 
         args = [
             sys.executable,

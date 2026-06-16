@@ -5,3 +5,4 @@ pydantic>=2.5.0
 python-chess>=1.9.4
 mem0ai>=0.1.0
 chromadb
+stockfish

@@ -1,40 +1,38 @@
 """
-stockfish_evaluator.py — Stockfish engine integration for position evaluation via HTTP.
+stockfish_evaluator.py — Stockfish engine integration for position evaluation via local binary.
 
 Provides:
-- Position analysis using serverless Stockfish microservice
+- Position analysis using local Stockfish binary installed via Nixpacks
 - Win probability calculation from centipawn/mate scores
 - Principal Variation (PV) line extraction in UCI notation
-- Robust error handling with 3-retry logic
+- Direct Python interface to Stockfish engine
 
 Usage:
     from engine.stockfish_evaluator import StockfishEvaluator
 
     evaluator = StockfishEvaluator()
-    result = await evaluator.get_win_probability(fen_string)
+    result = evaluator.get_win_probability(fen_string)  # Note: now synchronous
 """
 
 import os
 import chess
-import httpx
 from pathlib import Path
 from typing import Optional, Any
-import asyncio
+from stockfish import Stockfish
 
 
 class StockfishEvaluator:
     """
-    Async Stockfish evaluator via HTTP with win probability and PV line extraction.
+    Local Stockfish evaluator using the Python wrapper with win probability and PV line extraction.
 
     Features:
-    - Analyzes positions to configurable depth via remote serverless endpoint
+    - Analyzes positions to configurable depth via local Stockfish binary
     - Converts centipawn/mate scores to win percentages
-    - Extracts principal variation in UCI notation (simulated/derived from response if needed)
-    - Handles mate scores and bound flags robustly
-    - Implements 3-retry logic with exponential backoff
+    - Extracts principal variation in UCI notation from Stockfish analysis
+    - Handles mate scores robustly
+    - Direct local communication (no network calls)
     """
 
-    MAX_RETRIES = 3
     DEPTH = 15  # Analysis depth
 
     @staticmethod
@@ -58,60 +56,32 @@ class StockfishEvaluator:
             parts.append("0" if len(parts) >= 4 else "-")
         return " ".join(parts)
 
-    def __init__(self, stockfish_url: Optional[str] = None):
+    def __init__(self, stockfish_path: Optional[str] = None):
         """
-        Initialize Stockfish evaluator.
+        Initialize Stockfish evaluator with local binary.
 
         Args:
-            stockfish_url: URL to the serverless Stockfish endpoint. Defaults to ENGINE_URL env var
-                           or "http://localhost:3002/api/evaluate" for local dev.
+            stockfish_path: Path to the Stockfish binary. Defaults to STOCKFISH_BINARY_PATH env var
+                           or "stockfish" for system-installed binary (available via Nixpacks on Railway).
         """
-        base_url = stockfish_url or os.getenv("ENGINE_URL", "http://localhost:3002")
-        base_url = base_url.rstrip('/')
-        self.stockfish_url = f"{base_url}/api/evaluate"
+        binary_path = stockfish_path or os.getenv("STOCKFISH_BINARY_PATH", "stockfish")
+        self.engine = Stockfish(path=binary_path, depth=self.DEPTH)
         self._initialized = True
 
-    async def initialize(self) -> bool:
+    def initialize(self) -> bool:
         """
-        Initialize Stockfish evaluator (no-op for HTTP version).
+        Initialize Stockfish evaluator (sync for local engine).
 
         Returns:
-            True (always, as it's a stateless HTTP client).
+            True if initialization successful.
         """
-        return self._initialized
-
-    async def _analyze_position_with_retry(self, fen: str) -> Optional[dict[str, Any]]:
-        """
-        Analyze a position with 3-retry logic and exponential backoff via HTTP.
-
-        Args:
-            fen: FEN string to analyze.
-
-        Returns:
-            Analysis result dictionary or None if all retries fail.
-        """
-        last_error = None
-
-        for attempt in range(self.MAX_RETRIES):
-            try:
-                async with httpx.AsyncClient(timeout=15.0) as client:
-                    response = await client.post(
-                        self.stockfish_url,
-                        json={"fen": fen, "depth": self.DEPTH}
-                    )
-                    response.raise_for_status()
-                    return response.json()
-
-            except Exception as e:
-                last_error = e
-                wait_time = (2 ** attempt) * 0.5  # Exponential backoff: 0.5s, 1s, 2s
-
-                if attempt < self.MAX_RETRIES - 1:
-                    print(f"[Stockfish] HTTP Retry {attempt + 1}/{self.MAX_RETRIES} after {wait_time}s: {e}")
-                    await asyncio.sleep(wait_time)
-
-        print(f"[Stockfish] All {self.MAX_RETRIES} HTTP retries failed: {last_error}")
-        return None
+        try:
+            # Test the engine with a simple command
+            self.engine.get_best_move()
+            return True
+        except Exception as e:
+            print(f"[Stockfish] Initialization failed: {e}")
+            return False
 
     def _calculate_win_probability(self, cp_score: float) -> tuple[float, float]:
         """
@@ -152,47 +122,31 @@ class StockfishEvaluator:
             # Near-certain loss for White
             return 0.0, 100.0
 
-    def _sanitize_cp_value(self, raw_score: dict) -> tuple[float, bool, bool]:
+    def _extract_pv_line(self) -> list[str]:
         """
-        Safely extract centipawn value handling bounds and edge cases.
-
-        Args:
-            raw_score: The score dictionary from HTTP response (contains 'cp' or implies mate).
+        Extract Principal Variation from the current Stockfish analysis.
 
         Returns:
-            Tuple of (sanitized_cp_value, has_lowerbound, has_upperbound).
+            List of moves in the principal variation.
         """
-        # For HTTP, we just get a flat cp value. We'll simulate bounds if needed, but usually not present.
-        has_lowerbound = False
-        has_upperbound = False
+        try:
+            # Get the info from the last evaluation
+            info = self.engine.info
+            if "pv" in info:
+                pv_moves = info["pv"].split()
+                return pv_moves
+            else:
+                return []
+        except:
+            return []
 
-        cp = raw_score.get("cp")
-        if cp is not None:
-            try:
-                return float(cp), has_lowerbound, has_upperbound
-            except (ValueError, TypeError):
-                return 0.0, has_lowerbound, has_upperbound
-
-        return 0.0, has_lowerbound, has_upperbound
-
-    def _extract_pv_line(self, info: dict) -> list[str]:
-        """
-        Extract Principal Variation.
-        Note: The simple serverless endpoint currently returns best_move and cp.
-        To get full PV, we'd need to enhance the Node.js endpoint. For now, returning [best_move] if available.
-        """
-        pv_moves = []
-        if "best_move" in info:
-            pv_moves.append(info["best_move"])
-        return pv_moves
-
-    async def get_win_probability(
+    def get_win_probability(
         self,
         fen: str,
         include_pv: bool = True
     ) -> dict[str, Any]:
         """
-        Get win probabilities for a position with optional PV line.
+        Get win probabilities for a position with optional PV line using local Stockfish.
 
         Args:
             fen: FEN string of the position to analyze.
@@ -223,47 +177,71 @@ class StockfishEvaluator:
         }
 
         try:
-            # Sanitize FEN before sending
+            # Sanitize FEN before setting
             fen = self.sanitize_fen(fen)
 
-            # Analyze with retry logic
-            info = await self._analyze_position_with_retry(fen)
+            # Set the position in the local Stockfish engine
+            self.engine.set_fen_position(fen)
 
-            if info is None:
-                result["error"] = "Analysis failed after retries"
-                return result
+            # Get the evaluation from Stockfish
+            evaluation = self.engine.get_evaluation()
 
-            if "error" in info:
-                result["error"] = info["error"]
-                return result
+            # Extract the score type and value
+            if evaluation['type'] == 'cp':  # centipawn
+                cp_value = evaluation['value']
 
-            cp_value = info.get("cp", 0)
-            best_move = info.get("best_move", "")
+                # Check for mate heuristic (high cp values may indicate near-mate situations)
+                if abs(cp_value) >= 10000:  # Very high value indicates mate
+                    result["is_mate"] = True
+                    # Determine if it's mate for white or black based on sign
+                    if cp_value > 0:
+                        # Mate for white
+                        result["white_prob"] = 100.0
+                        result["black_prob"] = 0.0
+                        result["mate_in"] = abs(cp_value)  # This is a convention for mate in N
+                    else:
+                        # Mate for black
+                        result["white_prob"] = 0.0
+                        result["black_prob"] = 100.0
+                        result["mate_in"] = abs(cp_value)  # This is a convention for mate in N
+                    result["raw_score"] = f"#{'+' if cp_value > 0 else '-'}{abs(cp_value)}"
+                    result["cp_value"] = float(cp_value)
+                else:
+                    # Calculate win probabilities from centipawn score
+                    white_prob, black_prob = self._calculate_win_probability(cp_value)
 
-            # Check for mate heuristic (cp >= 9000 or <= -9000)
-            if abs(cp_value) >= 9000:
+                    result["white_prob"] = white_prob
+                    result["black_prob"] = black_prob
+                    result["raw_score"] = f"cp {cp_value}"
+                    result["cp_value"] = float(cp_value)
+
+            elif evaluation['type'] == 'mate':  # mate in N
                 result["is_mate"] = True
-                result["mate_in"] = 1 # Simplified for HTTP response
-                if cp_value > 0:
+                mate_in = evaluation['value']
+
+                # Determine if mate is for white or black based on the sign
+                if mate_in > 0:
+                    # Mate for white
                     result["white_prob"] = 100.0
                     result["black_prob"] = 0.0
                 else:
+                    # Mate for black
                     result["white_prob"] = 0.0
                     result["black_prob"] = 100.0
-                result["raw_score"] = f"M{1}"
-                result["cp_value"] = float(cp_value)
-            else:
-                # Logistic Sigmoid Formula for win probability
-                white_decimal = 1.0 / (1.0 + 10.0 ** (-cp_value / 400.0))
 
-                result["white_prob"] = round(white_decimal * 100, 1)
-                result["black_prob"] = round((1.0 - white_decimal) * 100, 1)
-                result["raw_score"] = f"cp {cp_value}"
-                result["cp_value"] = float(cp_value)
+                result["mate_in"] = abs(mate_in)
+                result["raw_score"] = f"#{'+' if mate_in > 0 else '-'}{abs(mate_in)}"
+                result["cp_value"] = float(mate_in * 10000)  # Represent mate as large centipawn value
 
             # Extract PV line if requested
             if include_pv:
-                result["pv_line"] = self._extract_pv_line(info)
+                result["pv_line"] = self.engine.get_top_moves(5)  # Get top 5 moves as PV
+                # Extract just the move strings from the top moves
+                if isinstance(result["pv_line"], list) and len(result["pv_line"]) > 0:
+                    if isinstance(result["pv_line"][0], dict):
+                        result["pv_line"] = [move["Move"] for move in result["pv_line"]]
+                    else:
+                        result["pv_line"] = [str(move) for move in result["pv_line"]]
 
         except Exception as e:
             result["error"] = f"Failed to analyze position: {str(e)}"
@@ -272,9 +250,12 @@ class StockfishEvaluator:
         return result
 
     def close(self) -> None:
-        """Close the Stockfish engine connection (no-op for HTTP)."""
-        pass
+        """Close the Stockfish engine connection."""
+        try:
+            self.engine.quit()
+        except:
+            pass
 
     def __del__(self) -> None:
         """Destructor to ensure cleanup."""
-        pass
+        self.close()
