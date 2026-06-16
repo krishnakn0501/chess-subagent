@@ -326,10 +326,18 @@ class GameOrchestrator:
         Run the appropriate agent script as a background thread subprocess.
         With 3-retry logic and LTM integration.
         """
-        agent_script = str(self.project_root / ".claude" / "scripts" / f"{color}_player" / "choose_move.py".resolve())
+        agent_script = str(
+            (
+            self.project_root / ".claude" / "scripts" / f"{color}_player" / "choose_move.py"
+            ).resolve() 
+            )
 
-        scripts_path = str(self.project_root / ".claude" / "scripts".resolve())
-        root_path = str(self.project_root.resolve())
+        scripts_path = str(
+            (self.project_root / ".claude" / "scripts")
+            .resolve())
+        root_path = str(
+            (self.project_root)
+            .resolve())
         existing_path = os.environ.get("PYTHONPATH", "")
         path_sep = os.pathsep
         pythonpath = f"{scripts_path}{path_sep}{root_path}"
@@ -473,7 +481,9 @@ class GameOrchestrator:
         Returns:
             Critic analysis result dictionary.
         """
-        critic_script = str(self.project_root / ".claude" / "scripts" / "critic_agent" / "choose_move.py".resolve())
+        critic_script = str(
+            (self.project_root / ".claude" / "scripts" / "critic_agent" / "choose_move.py"
+            ).resolve())
 
         args = [
             sys.executable,
