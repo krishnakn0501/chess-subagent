@@ -147,7 +147,9 @@ const HomePage: React.FC = () => {
   // WebSocket connection for real-time updates
   useEffect(() => {
     // WebSocket URL from env var with fallback for local dev
-    const wsUrl = process.env.NEXT_PUBLIC_WS_URL || `ws://localhost:8000/ws/game`;
+    const wsBaseUrl = process.env.NEXT_PUBLIC_WS_URL || `ws://localhost:8000/ws/game`;
+
+    const wsUrl = `${wsBaseUrl}/ws/game`;
 
     const socket = new WebSocket(wsUrl);
 

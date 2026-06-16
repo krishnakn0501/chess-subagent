@@ -326,9 +326,9 @@ class GameOrchestrator:
         Run the appropriate agent script as a background thread subprocess.
         With 3-retry logic and LTM integration.
         """
-        agent_script = self.project_root / ".claude" / "scripts" / f"{color}_player" / "choose_move.py"
+        agent_script = self.project_root / "backend" / "backend" / ".claude" / "scripts" / f"{color}_player" / "choose_move.py"
 
-        scripts_path = self.project_root / ".claude" / "scripts"
+        scripts_path = self.project_root / "backend" / ".claude" / "scripts"
         engine_path = self.project_root / "backend" / "app" / "engine"
         existing_path = os.environ.get("PYTHONPATH", "")
         path_sep = os.pathsep
@@ -471,7 +471,7 @@ class GameOrchestrator:
         Returns:
             Critic analysis result dictionary.
         """
-        critic_script = self.project_root / ".claude" / "scripts" / "critic_agent" / "choose_move.py"
+        critic_script = self.project_root / "backend" / ".claude" / "scripts" / "critic_agent" / "choose_move.py"
 
         args = [
             sys.executable,

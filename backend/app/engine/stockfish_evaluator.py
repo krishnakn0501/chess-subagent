@@ -66,9 +66,9 @@ class StockfishEvaluator:
             stockfish_url: URL to the serverless Stockfish endpoint. Defaults to ENGINE_URL env var
                            or "http://localhost:3002/api/evaluate" for local dev.
         """
-        self.stockfish_url = stockfish_url or os.getenv(
-            "ENGINE_URL", "http://localhost:3002/api/evaluate"
-        )
+        base_url = stockfish_url or os.getenv("ENGINE_URL", "http://localhost:3002")
+        base_url = base_url.rstrip('/')
+        self.stockfish_url = f"{base_url}/api/evaluate"
         self._initialized = True
 
     async def initialize(self) -> bool:
