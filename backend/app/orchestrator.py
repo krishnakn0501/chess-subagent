@@ -292,7 +292,7 @@ class GameOrchestrator:
         })
 
         # Step 6: Run Critic Agent analysis in background task
-        print(f"[Orchestrator] Starting background Critic Agent analysis...")
+        print("[Orchestrator] Starting background Critic Agent analysis...")
         critic_task = asyncio.create_task(
             self._run_critic_analysis_and_broadcast(
                 fen_before=fen_before,
@@ -310,7 +310,7 @@ class GameOrchestrator:
         try:
             await asyncio.wait_for(critic_task, timeout=15.0)  # Wait max 15 seconds for critic
         except asyncio.TimeoutError:
-            print(f"[Orchestrator] Critic analysis timed out after 15 seconds, continuing game")
+            print("[Orchestrator] Critic analysis timed out after 15 seconds, continuing game")
 
         # Compile final enhanced result (critic might not have completed in time)
         final_result = enhanced_result.copy()
@@ -326,10 +326,10 @@ class GameOrchestrator:
         Run the appropriate agent script as a background thread subprocess.
         With 3-retry logic and LTM integration.
         """
-        agent_script = self.project_root / "backend" / "backend" / ".claude" / "scripts" / f"{color}_player" / "choose_move.py"
+        agent_script = self.project_root / ".claude" / "scripts" / f"{color}_player" / "choose_move.py"
 
-        scripts_path = self.project_root / "backend" / ".claude" / "scripts"
-        engine_path = self.project_root / "backend" / "app" / "engine"
+        scripts_path = self.project_root / ".claude" / "scripts"
+        engine_path = self.project_root / "app" / "engine"
         existing_path = os.environ.get("PYTHONPATH", "")
         path_sep = os.pathsep
         pythonpath = f"{scripts_path}{path_sep}{engine_path}"
@@ -338,7 +338,7 @@ class GameOrchestrator:
         env = {**os.environ, "PYTHONPATH": pythonpath}
 
         print(f"[ORCHESTRATOR] Target script: {agent_script}")
-        print(f"[ORCHESTRATOR] Environment check:")
+        print("[ORCHESTRATOR] Environment check:")
         print(f"  - ANTHROPIC_API_KEY: {'SET' if env.get('ANTHROPIC_API_KEY') else 'NOT SET'}")
         print(f"  - ANTHROPIC_BASE_URL: {env.get('ANTHROPIC_BASE_URL', 'NOT SET')}")
         print(f"  - ANTHROPIC_MODEL: {env.get('ANTHROPIC_MODEL', 'NOT SET')}")
