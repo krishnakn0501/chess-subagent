@@ -57,7 +57,7 @@ class GameOrchestrator:
         self._task: asyncio.Task | None = None
 
         # Project root is 3 levels up from backend/app/orchestrator.py
-        self.project_root = Path(__file__).parent.parent.parent
+        self.project_root = Path(__file__).resolve().parent.parent.parent
         self.move_delay = 1.0  # Seconds between automated moves
         self.agent_timeout = 150.0  # Seconds timeout for agent subprocesses
 
@@ -326,10 +326,10 @@ class GameOrchestrator:
         Run the appropriate agent script as a background thread subprocess.
         With 3-retry logic and LTM integration.
         """
-        agent_script = self.project_root / ".claude" / "scripts" / f"{color}_player" / "choose_move.py"
+        agent_script = str(self.project_root / ".claude" / "scripts" / f"{color}_player" / "choose_move.py".resolve())
 
-        scripts_path = self.project_root / ".claude" / "scripts"
-        engine_path = self.project_root / "app" / "engine"
+        scripts_path = str(self.project_root / ".claude" / "scripts".resolve())
+        engine_path = str(self.project_root / "app" / "engine".resolve())
         existing_path = os.environ.get("PYTHONPATH", "")
         path_sep = os.pathsep
         pythonpath = f"{scripts_path}{path_sep}{engine_path}"
@@ -473,7 +473,7 @@ class GameOrchestrator:
         Returns:
             Critic analysis result dictionary.
         """
-        critic_script = self.project_root / ".claude" / "scripts" / "critic_agent" / "choose_move.py"
+        critic_script = str(self.project_root / ".claude" / "scripts" / "critic_agent" / "choose_move.py".resolve())
 
         args = [
             sys.executable,
