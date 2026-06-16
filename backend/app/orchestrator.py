@@ -24,7 +24,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent))
 
 from core.connection import ConnectionManager
-from engine.board import load_game_state, init_game_state
+from app.engine.board import load_game_state, init_game_state
 
 
 class GameOrchestrator:
@@ -75,8 +75,8 @@ class GameOrchestrator:
         """
         try:
             # Import here to avoid circular dependencies
-            from engine.stockfish_evaluator import StockfishEvaluator
-            from engine.memory_manager import get_qwen_memory_client
+            from app.engine.stockfish_evaluator import StockfishEvaluator
+            from app.engine.memory_manager import get_qwen_memory_client
 
             # Initialize Stockfish
             if self._stockfish_evaluator is None:
@@ -351,6 +351,9 @@ class GameOrchestrator:
         print(f"  - ANTHROPIC_BASE_URL: {env.get('ANTHROPIC_BASE_URL', 'NOT SET')}")
         print(f"  - ANTHROPIC_MODEL: {env.get('ANTHROPIC_MODEL', 'NOT SET')}")
 
+        print("PROJECT_ROOT =", root_path)
+        print("PYTHONPATH =", pythonpath)
+
         MAX_RETRIES = self.MAX_API_RETRIES
 
         for attempt in range(MAX_RETRIES):
@@ -616,7 +619,7 @@ class GameOrchestrator:
             True if stored successfully.
         """
         try:
-            from engine.memory_manager import store_lesson
+            from app.engine.memory_manager import store_lesson
 
             store_lesson(player_color, fen, lesson)
             print(f"[Orchestrator] Stored lesson for {player_color}: {lesson[:50]}...")
@@ -770,9 +773,9 @@ class GameOrchestrator:
             Result dictionary with success=True and the chosen move output.
         """
         try:
-            from engine.get_legal_moves import generate_all_legal_moves
-            from engine.apply_move import apply_move
-            from engine.validate_move import simulate_move, in_check
+            from app.engine.get_legal_moves import generate_all_legal_moves
+            from app.engine.apply_move import apply_move
+            from app.engine.validate_move import simulate_move, in_check
 
             legal_moves = generate_all_legal_moves(color)
             if not legal_moves:
