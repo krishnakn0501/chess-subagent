@@ -23,7 +23,7 @@ import sys
 # Add backend/app to path for relative imports
 sys.path.insert(0, str(Path(__file__).parent))
 
-from core.connection import ConnectionManager
+from app.core.connection import ConnectionManager
 from app.engine.board import load_game_state, init_game_state
 
 

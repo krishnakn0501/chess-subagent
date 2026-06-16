@@ -53,7 +53,7 @@ class CoachAgent:
 
         self._init_attempted = True
         try:
-            from engine.memory_manager import get_qwen_memory_client
+            from app.engine.memory_manager import get_qwen_memory_client
             self._memory = get_qwen_memory_client()
             if self._memory:
                 self._initialized = True
@@ -265,7 +265,7 @@ When answering:
 3. For current-game predictions: analyze the provided FEN, consider material balance and key factors, cite relevant lessons from memory
 4. Cite specific lessons or principles when relevant
 5. If no memories found AND question isn't about general chess, acknowledge honestly: "This isn't in my current training context"
-6. Be concise (3-5 sentences for simple questions, up to 10 for complex ones)
+6. Be concise (1-2 sentences for simple questions, up to 10 for complex ones)
 7. Be encouraging and educational in tone
 8. If the question is not about chess at all, politely say it's outside your domain"""
 

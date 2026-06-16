@@ -7,6 +7,7 @@ Handles:
 - Terminal rendering
 - Piece lookup helpers
 - Game state persistence to project root/game_state/
+- Captured pieces tracking
 
 Piece encoding:
   White: K Q R B N P  (uppercase)
@@ -15,6 +16,7 @@ Piece encoding:
 """
 
 import json
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +28,119 @@ PGN_PATH = PROJECT_ROOT / "game_state" / "last_game.pgn"
 
 # Starting position in FEN
 STARTING_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+
+# Starting piece counts for a full chess game
+STARTING_WHITE_PIECES: dict[str, int] = {"K": 1, "Q": 1, "R": 2, "B": 2, "N": 2, "P": 8}
+STARTING_BLACK_PIECES: dict[str, int] = {"k": 1, "q": 1, "r": 2, "b": 2, "n": 2, "p": 8}
+
+
+def get_captured_pieces(fen: str) -> dict[str, list[str]]:
+    """
+    Calculate captured pieces using the Dynamic Count Approach.
+
+    Parses the FEN string to count remaining pieces on the board,
+    subtracts from starting counts, and returns the missing pieces
+    (i.e., captured pieces).
+
+    Args:
+        fen: Current FEN string (只需 the position part is parsed)
+
+    Returns:
+        Dictionary with two keys:
+        - "captured_by_white": List of captured black pieces (e.g., ["p", "n"])
+        - "captured_by_black": List of captured white pieces (e.g., ["P", "R"])
+        Both lists are sorted for consistent output.
+    """
+    # Parse the position component (first part) of FEN
+    position = fen.split()[0] if fen else ""
+
+    # Count pieces currently on the board
+    current_pieces: dict[str, int] = Counter()
+    for rank_str in position.split("/"):
+        for ch in rank_str:
+            if ch.isalpha():
+                current_pieces[ch] += 1
+
+    # Calculate captured pieces by subtracting current from starting
+    captured_by_white: list[str] = []  # Black pieces captured by white
+    captured_by_black: list[str] = []  # White pieces captured by black
+
+    # Check white pieces (uppercase) - these are captured by black if missing
+    for piece_type, starting_count in STARTING_WHITE_PIECES.items():
+        current_count = current_pieces.get(piece_type, 0)
+        missing = starting_count - current_count
+        if missing > 0:
+            captured_by_black.extend([piece_type] * missing)
+
+    # Check black pieces (lowercase) - these are captured by white if missing
+    for piece_type, starting_count in STARTING_BLACK_PIECES.items():
+        current_count = current_pieces.get(piece_type, 0)
+        missing = starting_count - current_count
+        if missing > 0:
+            captured_by_white.extend([piece_type] * missing)
+
+    # Sort for consistent output
+    captured_by_white.sort()
+    captured_by_black.sort()
+
+    return {
+        "captured_by_white": captured_by_white,
+        "captured_by_black": captured_by_black
+    }
+
+
+def state_to_fen(state: dict[str, Any]) -> str:
+    """
+    Convert a game state dictionary to a FEN string.
+
+    Args:
+        state: Game state dictionary with board, turn, castling, en_passant, etc.
+
+    Returns:
+        FEN string representation of the current position.
+    """
+    board = state["board"]
+    ranks = []
+
+    for rank in board:
+        fen_rank = ""
+        empty = 0
+        for sq in rank:
+            if sq == ".":
+                empty += 1
+            else:
+                if empty:
+                    fen_rank += str(empty)
+                    empty = 0
+                fen_rank += sq
+        if empty:
+            fen_rank += str(empty)
+        ranks.append(fen_rank)
+
+    # Build complete FEN
+    position = "/".join(ranks)
+    turn_char = "w" if state["turn"] == "white" else "b"
+    fen = f"{position} {turn_char} "
+
+    # Castling rights
+    castling = state.get("castling", {})
+    castle_str = ""
+    if castling.get("white_kingside"):
+        castle_str += "K"
+    if castling.get("white_queenside"):
+        castle_str += "Q"
+    if castling.get("black_kingside"):
+        castle_str += "k"
+    if castling.get("black_queenside"):
+        castle_str += "q"
+    fen += castle_str if castle_str else "-"
+    fen += " "
+
+    # En passant
+    fen += str(state.get("en_passant") or "-")
+    fen += f" {state.get('halfmove_clock', 0)} {state.get('fullmove_number', 1)}"
+
+    return fen
 
 PIECE_SYMBOLS: dict[str, str] = {
     "K": "♔", "Q": "♕", "R": "♖", "B": "♗", "N": "♘", "P": "♙",
@@ -307,6 +422,10 @@ def init_game_state() -> dict[str, Any]:
         "halfmove_clock": 0,        # For 50-move rule
         "fullmove_number": 1,
         "move_history": [],         # List of moves in algebraic notation
+        "captured_pieces": {        # Track captured pieces
+            "captured_by_white": [],
+            "captured_by_black": []
+        },
         "status": "active",         # active | check | checkmate | stalemate | draw
         "in_check": None            # "white" | "black" | None
     }

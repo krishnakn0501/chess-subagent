@@ -30,7 +30,8 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from board import (
     load_game_state, save_game_state,
-    algebraic_to_index, index_to_algebraic, render_board
+    algebraic_to_index, index_to_algebraic, render_board, state_to_fen,
+    get_captured_pieces
 )
 from validate_move import (
     validate_move, simulate_move, in_check, is_white, is_black
@@ -215,6 +216,12 @@ def apply_move(move_str: str) -> dict[str, Any]:
         print(f"  Board: {board}", file=sys.stderr)
 
     save_game_state(state)
+
+    # Update captured pieces after save (requires loading current state)
+    updated_state = load_game_state()
+    fen = state_to_fen(updated_state)
+    updated_state["captured_pieces"] = get_captured_pieces(fen)
+    save_game_state(updated_state)
 
     return {
         "status": "ok",
