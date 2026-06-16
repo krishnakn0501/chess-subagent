@@ -18,6 +18,7 @@ from typing import Literal, Any
 from pathlib import Path
 import asyncio
 from dotenv import load_dotenv
+import os
 
 # Load environment variables from .env file
 load_dotenv()
@@ -38,10 +39,13 @@ app = FastAPI(
     version="1.0.0"
 )
 
+
 # CORS configuration for frontend communication
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure appropriately for production
+    allow_origins=["https://stockfish-engine.vercel.app",
+                   "https://chess-frontend-nine-lilac.vercel.app",
+                    ],  # Configure appropriately for production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

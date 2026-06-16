@@ -117,7 +117,11 @@ const HomePage: React.FC = () => {
       try {
         const [gameResponse, settingsResponse] = await Promise.all([
           fetch(`${BACKEND_URL}/api/game-state`).then(r => r.json()),
-          fetch(`${BACKEND_URL}/api/settings`).catch(() => ({}))
+          
+          // ADDED: .then(r => r.json()) and changed fallback to null
+          fetch(`${BACKEND_URL}/api/settings`)
+            .then(r => r.json())
+            .catch(() => null) 
         ]);
 
         setGameState(gameResponse);
@@ -157,7 +161,7 @@ const HomePage: React.FC = () => {
 
       switch (message.type) {
         case 'initial_state':
-          setGameState(message.state);
+          setGameState(message.state ?? null);
           break;
 
         case 'move_complete':
@@ -182,7 +186,7 @@ const HomePage: React.FC = () => {
           }
 
           // Only add logs for new moves (deduplication using ref to avoid stale closure)
-          const currentMoveCount = message.state.move_history?.length || 0;
+          const currentMoveCount = message.state?.move_history?.length || 0;
           if (currentMoveCount > lastMoveCountRef.current && message.agent_output) {
             let rawString = '';
 
@@ -205,7 +209,7 @@ const HomePage: React.FC = () => {
           break;
 
         case 'reset':
-          setGameState(message.state);
+          setGameState(message.state ?? null);
           setMoveLog([]);
           setAgentOutput('');
           lastMoveCountRef.current = 0;
@@ -240,7 +244,7 @@ const HomePage: React.FC = () => {
           break;
 
         case 'error':
-          setUiStatus({ state: 'error', message: message.message || 'Unknown error' });
+          setUiStatus({ state: 'error', message: message.agent_output ? (typeof message.agent_output === 'string' ? message.agent_output : message.agent_output.error) : 'Unknown error' });
           break;
       }
     };
